@@ -1,7 +1,9 @@
+using System.Reflection;
 using BepInEx;
 using BepInEx.Unity.Mono;
 using BepInEx.Unity.Mono.Configuration;
 using BepInEx.Configuration;
+using HarmonyLib;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -19,8 +21,12 @@ namespace BankInventoryMod
 		private ConfigEntry<int> baseCapacity;
 		private ConfigEntry<int> pageSize;
 
+		private static BankInventoryPlugin _instance;
+		public static BankInventoryPlugin Instance { get { return _instance; } }
+
 		private void Awake()
 		{
+			_instance = this;
 			openKey = Config.Bind("General", "OpenBankKey", new KeyboardShortcut(KeyCode.O),
 				"Key that opens/closes the bank inventory. Default O because B is used by the game for Head Lamp Use.");
 			nextPageKey = Config.Bind("General", "NextPageKey", new KeyboardShortcut(KeyCode.RightBracket),
@@ -34,6 +40,28 @@ namespace BankInventoryMod
 
 			SceneManager.sceneLoaded += OnSceneLoaded;
 			EnsureBankExists();
+
+			// Harmony patches:
+			//  1) Storage.TakeAll() empties the bank data but never refreshes the page
+			//     state or the slot UIs, which leaves ghost icons ("overflow") and a
+			//     ForeignSlots/page desync. Postfix re-syncs everything.
+			//  2) MoveToOtherInventory() silently returns false when an item stack has a
+			//     null ItemReference (SlotController.cs:666); Take All can leave some
+			//     backpack stacks in exactly that state, so "put back" fails until Sort
+			//     rebuilds every reference. Prefix rebuilds the reference up-front.
+			try
+			{
+				Harmony harmony = new Harmony("com.juanberta.obenseuer.bankinventory.takeallfix");
+				harmony.Patch(AccessTools.Method(typeof(Storage), "TakeAll"),
+					postfix: new HarmonyMethod(typeof(BankPatches), nameof(BankPatches.StorageTakeAllPostfix)));
+				harmony.Patch(AccessTools.Method(typeof(SlotController), "MoveToOtherInventory",
+						new System.Type[] { typeof(SlotController), typeof(int), typeof(int).MakeByRefType() }),
+					prefix: new HarmonyMethod(typeof(BankPatches), nameof(BankPatches.MoveToOtherInventoryPrefix)));
+			}
+			catch (System.Exception e)
+			{
+				Logger.LogError("Failed to install BankInventory harmony patches: " + e);
+			}
 		}
 
 		private void OnDestroy()
@@ -142,6 +170,7 @@ namespace BankInventoryMod
 			BindAllSlots();
 			ApplyPageVisibility();
 			UpdateTitle();
+			EnsureQuickStackButton();
 			return true;
 		}
 
@@ -271,6 +300,242 @@ namespace BankInventoryMod
 
 			if (Inventory.instance != null && Inventory.instance.storagePanelUI != null)
 				Inventory.instance.storagePanelUI.UpdateStoragePanelUI(bank);
+		}
+
+		/// <summary>Called by the Harmony postfix after the game's Take All empties the
+		/// bank: restore page visibility and the header title.</summary>
+		public void RefreshAfterTakeAll(BankStorage bank)
+		{
+			ApplyPageVisibility();
+			UpdateTitle();
+		}
+
+		private const string QuickStackButtonName = "BankInventory_QuickStackButton";
+
+		/// <summary>Create (once) the Quick Stack button on the storage panel header,
+		/// next to the existing Sort / Take All buttons, and keep its visibility in
+		/// sync with the template button.</summary>
+		private void EnsureQuickStackButton()
+		{
+			if (Inventory.instance == null || Inventory.instance.storagePanelUI == null)
+				return;
+
+			StoragePanelUI ui = Inventory.instance.storagePanelUI;
+			Transform root = ui.transform;
+			Transform existing = FindDeep(root, QuickStackButtonName);
+			if (existing != null)
+			{
+				// TradePanel flows hide sort/takeAll; keep our button in the same state.
+				if (ui.takeAllButton != null)
+					existing.gameObject.SetActive(ui.takeAllButton.activeSelf);
+				return;
+			}
+
+			GameObject template = ui.takeAllButton != null ? ui.takeAllButton : ui.sortButton;
+			if (template == null)
+				return;
+
+			GameObject btn = Instantiate(template);
+			btn.name = QuickStackButtonName;
+			btn.SetActive(true);
+
+			Transform parent = template.transform.parent;
+			if (parent != null)
+				btn.transform.SetParent(parent, false);
+			else
+				btn.transform.SetParent(root, false);
+
+			int sibling = template.transform.GetSiblingIndex() + 1;
+			if (btn.transform.parent != null && sibling < btn.transform.parent.childCount)
+				btn.transform.SetSiblingIndex(sibling);
+
+			SetButtonText(btn, "QUICK STACK");
+
+			// Bind the click event through reflection so the mod does not depend on the
+			// UnityEngine.UI Button member signature (works across Unity UI versions).
+			Component btnComp = btn.GetComponent("Button");
+			if (btnComp == null)
+			{
+				Component[] comps = btn.GetComponentsInChildren<Component>(true);
+				for (int i = 0; i < comps.Length; i++)
+				{
+					if (comps[i].GetType().Name == "Button")
+					{
+						btnComp = comps[i];
+						break;
+					}
+				}
+			}
+			if (btnComp != null)
+			{
+				PropertyInfo prop = btnComp.GetType().GetProperty("onClick");
+				if (prop != null)
+				{
+					object evt = prop.GetValue(btnComp, null);
+					MethodInfo removeAll = evt.GetType().GetMethod("RemoveAllListeners", System.Type.EmptyTypes);
+					if (removeAll != null)
+						removeAll.Invoke(evt, null);
+					MethodInfo add = evt.GetType().GetMethod("AddListener",
+						new System.Type[] { typeof(UnityEngine.Events.UnityAction) });
+					if (add != null)
+						add.Invoke(evt, new object[] { (UnityEngine.Events.UnityAction)QuickStack });
+				}
+			}
+		}
+
+		/// <summary>Quick Stack: move identical (same item id) stacks from the player
+		/// inventory into the currently open storage, filling existing stacks up to the
+		/// item's stack limit. Items with no matching stack in the storage stay put.</summary>
+		private void QuickStack()
+		{
+			if (Inventory.instance == null)
+				return;
+
+			SlotController[] foreign = Inventory.instance.ForeignSlots;
+			if (foreign == null || foreign.Length == 0)
+				return;
+
+			SlotController[] player = Inventory.instance.AllSlots();
+			bool changed = false;
+
+			for (int p = 0; p < player.Length; p++)
+			{
+				SlotController ps = player[p];
+				if (ps == null)
+					continue;
+
+				ItemStack pstack = ps.itemStack;
+				if (pstack == null || pstack.itemId == -1 || pstack.itemAmount <= 0)
+					continue;
+
+				for (int f = 0; f < foreign.Length; f++)
+				{
+					SlotController ts = foreign[f];
+					if (ts == null || ts == ps)
+						continue;
+
+					ItemStack tstack = ts.itemStack;
+					if (tstack == null || tstack.itemId != pstack.itemId || tstack.itemAmount <= 0)
+						continue;
+
+					Item item = tstack.itemReference != null ? tstack.itemReference.Item : null;
+					if (item == null)
+						continue;
+
+					int limit = item.Stackable == 0 ? 1 : item.Stackable;
+					int space = limit - tstack.itemAmount;
+					if (space <= 0)
+						continue;
+
+					int move = Mathf.Min(space, pstack.itemAmount);
+					int moved;
+					if (ps.MoveToOtherInventory(ts, move, out moved) && moved > 0)
+					{
+						changed = true;
+						if (pstack.itemAmount <= 0)
+							break;
+					}
+				}
+			}
+
+			if (changed)
+			{
+				// Refresh both inventories so the moved amounts are shown immediately.
+				Inventory.instance.UpdateAllSlotsNow();
+				if (bank != null && bankOpen)
+					UpdateTitle();
+			}
+		}
+
+		/// <summary>Recursive transform lookup by name.</summary>
+		private static Transform FindDeep(Transform root, string name)
+		{
+			if (root == null)
+				return null;
+			if (root.name == name)
+				return root;
+			for (int i = 0; i < root.childCount; i++)
+			{
+				Transform found = FindDeep(root.GetChild(i), name);
+				if (found != null)
+					return found;
+			}
+			return null;
+		}
+
+		/// <summary>Set a UI text label without depending on the TextMeshPro assembly.</summary>
+		private static void SetButtonText(GameObject go, string text)
+		{
+			if (go == null)
+				return;
+			Component[] comps = go.GetComponentsInChildren<Component>(true);
+			for (int i = 0; i < comps.Length; i++)
+			{
+				System.Type t = comps[i].GetType();
+				if (t.Name == "TextMeshProUGUI" || t.Name == "Text")
+				{
+					PropertyInfo prop = t.GetProperty("text");
+					if (prop != null)
+					{
+						prop.SetValue(comps[i], text, null);
+						break;
+					}
+				}
+			}
+		}
+	}
+
+	/// <summary>Harmony patches that fix the "Take All" page/UI desync and the
+	/// "put back fails until Sort is pressed" item-reference issue.</summary>
+	internal static class BankPatches
+	{
+		/// <summary>After the game's Storage.TakeAll() empties the bank, re-sync the
+		/// page state, the ForeignSlots binding and every slot UI (the game only clears
+		/// item stacks and never refreshes the visible slots, leaving ghost icons and an
+		/// "overflow" look; hidden-page slots also keep stale icons until touched again).</summary>
+		internal static void StorageTakeAllPostfix(Storage __instance)
+		{
+			BankStorage bank = __instance as BankStorage;
+			if (bank == null || Inventory.instance == null)
+				return;
+
+			// Keep the game's foreign-slot reference aligned with the current array.
+			Inventory.instance.ForeignSlots = bank.Slots;
+
+			// Safety clamp of the page pointer (never leave an out-of-range page).
+			if (bank.CurrentPage < 0 || bank.CurrentPage >= bank.TotalPages)
+				bank.CurrentPage = 0;
+
+			// Refresh the header (page counter).
+			if (Inventory.instance.storagePanelUI != null)
+				Inventory.instance.storagePanelUI.UpdateStoragePanelUI(bank);
+
+			// Force every slot UI to rebuild from its (now empty) stack. TakeAll calls
+			// RemoveItem() and returns before UpdateSlot when a stack is fully moved, so
+			// ghost icons would remain without this explicit refresh.
+			for (int i = 0; i < bank.Slots.Length; i++)
+			{
+				SlotController sc = bank.Slots[i];
+				if (sc != null && sc.slot != null)
+					sc.slot.UpdateSlot();
+			}
+
+			// Re-apply page visibility so only the current page stays active.
+			if (BankInventoryPlugin.Instance != null)
+				BankInventoryPlugin.Instance.RefreshAfterTakeAll(bank);
+		}
+
+		/// <summary>Before any move-into-storage operation, rebuild a null item
+		/// reference. TakeAll leaves some backpack stacks without an ItemReference and
+		/// MoveToOtherInventory() then silently fails (SlotController.cs:666). Sort
+		/// "fixes" it by re-adding every item; this patch fixes the root cause instead.</summary>
+		internal static void MoveToOtherInventoryPrefix(SlotController __instance)
+		{
+			ItemStack stack = __instance.itemStack;
+			if (stack != null && stack.itemId > -1 && stack.itemAmount > 0 && stack.itemReference == null)
+			{
+				stack.SetItemReference();
+			}
 		}
 	}
 }
