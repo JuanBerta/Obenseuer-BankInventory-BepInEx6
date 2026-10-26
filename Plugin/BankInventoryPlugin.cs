@@ -87,10 +87,7 @@ namespace BankInventoryMod
 				return;
 
 			// Page navigation.
-			if (nextPageKey.Value.IsDown())
-				ChangePage(1);
-			if (prevPageKey.Value.IsDown())
-				ChangePage(-1);
+			DetectPageKeys();
 
 			// Infinite storage: if every slot is occupied, grow by one page immediately.
 			// This also guarantees the player can never "drop" items on the floor when
@@ -99,6 +96,18 @@ namespace BankInventoryMod
 			{
 				bank.ExpandByPage(pageSize.Value);
 				BindAllSlots();
+
+				// ExpandByPage() replaces the Slots array (Array.Resize). The game keeps
+				// rendering/interacting through Inventory.instance.ForeignSlots, which
+				// still points at the pre-expansion array here; re-point it at the new
+				// array so UI, F-key moves and storage navigation see the fresh slots.
+				if (Inventory.instance != null)
+					Inventory.instance.ForeignSlots = bank.Slots;
+
+				// Jump to the newly added page so the player immediately sees the fresh
+				// empty slots. Otherwise items dragged into the full page land in hidden
+				// slots with no visual feedback, which looks like "bank is full".
+				bank.CurrentPage = bank.TotalPages - 1;
 				ApplyPageVisibility();
 				UpdateTitle();
 			}
@@ -157,8 +166,37 @@ namespace BankInventoryMod
 			if (total <= 1)
 				return;
 			bank.CurrentPage = (bank.CurrentPage + delta + total) % total;
+			// Keep the game's foreign-slot reference aligned with the current array
+			// (safety net; normally it is already the latest bank.Slots).
+			if (Inventory.instance != null)
+				Inventory.instance.ForeignSlots = bank.Slots;
 			ApplyPageVisibility();
 			UpdateTitle();
+		}
+
+		/// <summary>Detect the page-turn keys. Uses both the configured BepInEx
+		/// KeyboardShortcut and a character-based check on Input.inputString: on
+		/// non-US keyboard layouts (e.g. Spanish) '[' and ']' require AltGr chords
+		/// and Unity reports different KeyCodes, so KeyCode.LeftBracket/RightBracket
+		/// shortcuts never fire even though the right characters are typed.</summary>
+		private void DetectPageKeys()
+		{
+			bool next = nextPageKey.Value.IsDown();
+			bool prev = prevPageKey.Value.IsDown();
+
+			string input = UnityEngine.Input.inputString;
+			for (int i = 0; i < input.Length; i++)
+			{
+				if (input[i] == ']')
+					next = true;
+				else if (input[i] == '[')
+					prev = true;
+			}
+
+			if (next)
+				ChangePage(1);
+			if (prev)
+				ChangePage(-1);
 		}
 
 		/// <summary>Instantiate a slot UI for every slot that does not have one yet.</summary>
@@ -177,6 +215,13 @@ namespace BankInventoryMod
 					sc.SetForbiddenCategories(bank.ForbiddenCategories);
 					sc.CaptureSlot(panel);
 				}
+
+				// The bank slot UI is instantiated from the player inventory prefab,
+				// which may carry playerSlot=true. The game decides "cross storage"
+				// dragging through Slot.playerSlot (Slot.IsOtherStorage), so bank slots
+				// must always be marked as non-player slots.
+				if (sc.slot != null)
+					sc.slot.playerSlot = false;
 			}
 		}
 
