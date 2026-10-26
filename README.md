@@ -23,7 +23,7 @@ A BepInEx 6 mod for [Obenseuer](https://store.steampowered.com/app/1554640/Obens
 - Open/close the bank with a hotkey (default `O`).
 - Deposit items from your inventory by dragging them into the bank (or use the game's "take all" button to withdraw everything).
 - **Infinite storage**: starts with 30 slots; whenever the storage becomes full it automatically grows by one page. You can never lose items to the floor because there is always at least one free slot.
-- **Multiple pages**: the UI shows 88 slots per page; navigate with `[` / `]` (previous / next page).
+- **Multiple pages**: the UI shows 88 slots per page; navigate with `Shift + [` / `Shift + ]` (previous / next page).
 - **Save support**: the bank is a global savable object (`Storage.global = true`), serialized into `Globals.tnmt` by the game's save system. It survives scene changes and save/load cycles.
 - Everything is configurable in the BepInEx config file.
 
@@ -45,8 +45,8 @@ The config file `BepInEx/config/com.juanberta.obenseuer.bankinventory.cfg` is ge
 | Section | Key | Default | Description |
 | --- | --- | --- | --- |
 | General | `OpenBankKey` | `O` | Key that opens/closes the bank inventory (default `O`; `B` is used by the game's Head Lamp Use) |
-| General | `NextPageKey` | `]` (RightBracket) | Key to go to the next bank page |
-| General | `PreviousPageKey` | `[` (LeftBracket) | Key to go to the previous bank page |
+| General | `NextPageKey` | `Shift + ]` (RightBracket) | Key to go to the next bank page |
+| General | `PreviousPageKey` | `Shift + [` (LeftBracket) | Key to go to the previous bank page |
 | Storage | `BaseCapacity` | `30` | Initial number of slots. The bank expands automatically when it becomes full |
 | Storage | `PageSize` | `88` | Slots shown per page (the game UI grid supports 88 slots) |
 
