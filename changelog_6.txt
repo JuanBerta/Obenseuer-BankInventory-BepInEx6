@@ -1,0 +1,27 @@
+Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
+=======================================================
+
+v1.1.0 (2026-10-27)
+--------------------
+Fixes
+  * The mod no longer touches the expensive in-game Backpack item (itemId 14930)
+    anywhere in its move/stack paths. Stacking is now sourced strictly from the
+    player's main inventory (Inventory.instance.Slots), so backpack slots and
+    character equipment can never be moved, auto-created or duplicated by the mod.
+  * Kept from 1.0.x: [ / ] page navigation fix (AltGr/layout-safe key detection),
+    false "bank full" on item return, Take All page overflow refresh and the
+    put-back item-reference fix.
+
+Stack button (reworked)
+  * "STACK" now follows the two-pass idea of LOMS' Inventory Tweaks
+    (https://github.com/LOMS/obenseuer-inventory-tweaks), reimplemented for the
+    multi-page bank:
+      1) top up existing stacks of the same kind (item id + liquid id),
+      2) fill free slots through the vanilla AddItem path (same checks as a
+         drag & drop, nothing is ever dropped).
+  * The vanilla move path (SlotController.AddItem) handles category/stack-size
+    rules, so it stays compatible with other mods and the base game.
+
+Credits
+  * Thanks to LOMS for the obenseuer-inventory-tweaks mod - the stacking
+    implementation was inspired by its approach.

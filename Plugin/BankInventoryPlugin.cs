@@ -6,10 +6,11 @@ using BepInEx.Configuration;
 using HarmonyLib;
 using UnityEngine;
 using UnityEngine.SceneManagement;
+using OS.Items;
 
 namespace BankInventoryMod
 {
-	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.0.0")]
+	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.1.0")]
 	public class BankInventoryPlugin : BaseUnityPlugin
 	{
 		private BankStorage bank;
@@ -312,7 +313,7 @@ namespace BankInventoryMod
 
 		private const string QuickStackButtonName = "BankInventory_QuickStackButton";
 
-		/// <summary>Create (once) the Quick Stack button on the storage panel header,
+		/// <summary>Create (once) the Stack button on the storage panel header,
 		/// next to the existing Sort / Take All buttons, and keep its visibility in
 		/// sync with the template button.</summary>
 		private void EnsureQuickStackButton()
@@ -349,7 +350,7 @@ namespace BankInventoryMod
 			if (btn.transform.parent != null && sibling < btn.transform.parent.childCount)
 				btn.transform.SetSiblingIndex(sibling);
 
-			SetButtonText(btn, "QUICK STACK");
+			SetButtonText(btn, "STACK");
 
 			// Bind the click event through reflection so the mod does not depend on the
 			// UnityEngine.UI Button member signature (works across Unity UI versions).
@@ -383,9 +384,13 @@ namespace BankInventoryMod
 			}
 		}
 
-		/// <summary>Quick Stack: move identical (same item id) stacks from the player
-		/// inventory into the currently open storage, filling existing stacks up to the
-		/// item's stack limit. Items with no matching stack in the storage stay put.</summary>
+		/// <summary>Stack: move items of every kind already present in the bank from the
+		/// player's main inventory into it — topping up existing stacks first (same item
+		/// id + liquid), then filling free slots. Only Inventory.instance.Slots (the main
+		/// backpack) is used as the source; BackpackStorage and CharacterSlots are never
+		/// touched and the equipped/expensive backpack item itself is explicitly excluded,
+		/// so the mod can never generate, move or duplicate it. Implementation follows the
+		/// two-pass idea of LOMS' Inventory Tweaks (adapted to our multi-page bank).</summary>
 		private void QuickStack()
 		{
 			if (Inventory.instance == null)
@@ -395,47 +400,18 @@ namespace BankInventoryMod
 			if (foreign == null || foreign.Length == 0)
 				return;
 
-			SlotController[] player = Inventory.instance.AllSlots();
+			SlotController[] player = Inventory.instance.Slots; // main inventory only (no backpack/equipment)
 			bool changed = false;
 
 			for (int p = 0; p < player.Length; p++)
 			{
-				SlotController ps = player[p];
-				if (ps == null)
+				SlotController source = player[p];
+				ItemStack stack = source != null ? source.itemStack : null;
+				if (!ItemKind.HasItem(stack) || IsBackpackItem(stack.itemId))
 					continue;
 
-				ItemStack pstack = ps.itemStack;
-				if (pstack == null || pstack.itemId == -1 || pstack.itemAmount <= 0)
-					continue;
-
-				for (int f = 0; f < foreign.Length; f++)
-				{
-					SlotController ts = foreign[f];
-					if (ts == null || ts == ps)
-						continue;
-
-					ItemStack tstack = ts.itemStack;
-					if (tstack == null || tstack.itemId != pstack.itemId || tstack.itemAmount <= 0)
-						continue;
-
-					Item item = tstack.itemReference != null ? tstack.itemReference.Item : null;
-					if (item == null)
-						continue;
-
-					int limit = item.Stackable == 0 ? 1 : item.Stackable;
-					int space = limit - tstack.itemAmount;
-					if (space <= 0)
-						continue;
-
-					int move = Mathf.Min(space, pstack.itemAmount);
-					int moved;
-					if (ps.MoveToOtherInventory(ts, move, out moved) && moved > 0)
-					{
-						changed = true;
-						if (pstack.itemAmount <= 0)
-							break;
-					}
-				}
+				if (MoveToContainer(source, foreign) > 0)
+					changed = true;
 			}
 
 			if (changed)
@@ -445,6 +421,64 @@ namespace BankInventoryMod
 				if (bank != null && bankOpen)
 					UpdateTitle();
 			}
+		}
+
+		/// <summary>Move one source stack into the bank: pass 1 tops up stacks of the
+		/// same kind (item id + liquid), pass 2 fills free slots. Uses the vanilla
+		/// AddItem path (same checks as a drag & drop: OnDroppedCheck, categories, stack
+		/// size) and never drops anything. Adapted from LOMS' Inventory Tweaks.</summary>
+		private static int MoveToContainer(SlotController source, SlotController[] targets)
+		{
+			ItemStack stack = source.itemStack;
+			Item item = stack.itemReference != null ? stack.itemReference.Item : null;
+			if (item == null)
+				return 0;
+
+			ItemKind kind = ItemKind.Of(stack);
+			int stackAmount = stack.itemAmount;
+			int remaining = stackAmount;
+
+			// Pass 1: top up stacks of the same kind (incl. liquid); pass 2: free slots.
+			for (int pass = 0; pass < 2 && remaining > 0; pass++)
+			{
+				for (int t = 0; t < targets.Length; t++)
+				{
+					SlotController target = targets[t];
+					if (target == null)
+						continue;
+
+					bool suitable = pass == 0
+						? ItemKind.HasItem(target.itemStack) && ItemKind.Of(target.itemStack) == kind
+						: target.itemStack.itemId == -1;
+					if (!suitable)
+						continue;
+
+					// Vanilla checks (OnDroppedCheck, categories, stack size); never drops.
+					target.AddItem(item, ref remaining, stack.ownerId, stack.Meta,
+						isSibling: true, onlycheck: false, mergingLiquidStackAlways: false, stackAmount);
+					if (remaining <= 0)
+						break;
+				}
+			}
+
+			int moved = stackAmount - remaining;
+			if (moved <= 0)
+				return 0;
+
+			// Shrink the source the same way the vanilla MoveToOtherInventory does.
+			stack.itemAmount = stackAmount - moved;
+			if (stack.itemAmount == 0)
+				source.RemoveItem();
+			else if (source.slot != null)
+				source.slot.UpdateSlot();
+			return moved;
+		}
+
+		/// <summary>Empty Backpack (item id 14930, BackpackStorage) is an expensive,
+		/// equipped-slot-driven item; the mod must never move it.</summary>
+		private static bool IsBackpackItem(int itemId)
+		{
+			return itemId == 14930;
 		}
 
 		/// <summary>Recursive transform lookup by name.</summary>
@@ -537,5 +571,45 @@ namespace BankInventoryMod
 				stack.SetItemReference();
 			}
 		}
+	}
+
+	/// <summary>"Same kind of item" for the Stack feature: the item ID plus, for liquid
+	/// containers, the liquid inside (inspired by LOMS' Inventory Tweaks).</summary>
+	internal readonly struct ItemKind : System.IEquatable<ItemKind>
+	{
+		private const int NoLiquid = -1;
+
+		public readonly int ItemId;
+		public readonly int LiquidId;
+
+		private ItemKind(int itemId, int liquidId)
+		{
+			ItemId = itemId;
+			LiquidId = liquidId;
+		}
+
+		public static ItemKind Of(ItemStack stack)
+		{
+			ItemLiquidData liquid = stack.Meta != null ? ItemMetaUtilities.GetMetaOfType<ItemLiquidData>(stack.Meta) : null;
+			bool hasLiquid = liquid != null && liquid.liquidItem != null
+				&& ItemLiquidData.IsGreaterThan(liquid.GetLiquidAmount(stack.itemAmount), 0f);
+			return new ItemKind(stack.itemId, hasLiquid ? liquid.liquidItem.ID : NoLiquid);
+		}
+
+		/// <summary>True for a stack holding at least one item.</summary>
+		public static bool HasItem(ItemStack stack)
+		{
+			return stack != null && stack.itemId != -1 && stack.itemAmount > 0;
+		}
+
+		public bool Equals(ItemKind other) => ItemId == other.ItemId && LiquidId == other.LiquidId;
+
+		public override bool Equals(object obj) => obj is ItemKind other && Equals(other);
+
+		public override int GetHashCode() => ItemId * 397 ^ LiquidId;
+
+		public static bool operator ==(ItemKind a, ItemKind b) => a.Equals(b);
+
+		public static bool operator !=(ItemKind a, ItemKind b) => !a.Equals(b);
 	}
 }
