@@ -10,7 +10,7 @@ using OS.Items;
 
 namespace BankInventoryMod
 {
-	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.1.0")]
+	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.1.2")]
 	public class BankInventoryPlugin : BaseUnityPlugin
 	{
 		private BankStorage bank;
@@ -21,6 +21,7 @@ namespace BankInventoryMod
 		private ConfigEntry<KeyboardShortcut> prevPageKey;
 		private ConfigEntry<int> baseCapacity;
 		private ConfigEntry<int> pageSize;
+		private ConfigEntry<bool> stackButton;
 
 		private static BankInventoryPlugin _instance;
 		public static BankInventoryPlugin Instance { get { return _instance; } }
@@ -38,6 +39,8 @@ namespace BankInventoryMod
 				"Initial number of slots. The bank expands automatically when it becomes full.");
 			pageSize = Config.Bind("Storage", "PageSize", 88,
 				"How many slots are shown per page (the game UI grid supports 88 slots).");
+			stackButton = Config.Bind("General", "StackButton", true,
+				"Show the mod's STACK button next to Sort / Take All in the bank panel. Set to false if you use Inventory Tweaks and don't want a second STACK button.");
 
 			SceneManager.sceneLoaded += OnSceneLoaded;
 			EnsureBankExists();
@@ -58,6 +61,17 @@ namespace BankInventoryMod
 				harmony.Patch(AccessTools.Method(typeof(SlotController), "MoveToOtherInventory",
 						new System.Type[] { typeof(SlotController), typeof(int), typeof(int).MakeByRefType() }),
 					prefix: new HarmonyMethod(typeof(BankPatches), nameof(BankPatches.MoveToOtherInventoryPrefix)));
+				// 3) Cold loads (Continue / Load from the main menu) keep the bank
+				//    GameObject inactive because the world doesn't exist yet. The game's
+				//    save/load hook loop (SaveController.ExecuteChildSaveLoadFunctions)
+				//    only dispatches hooks to active-in-hierarchy objects, so the bank's
+				//    OnLoadingGameSpecial() is skipped and it keeps its empty
+				//    freshly-created storageSlots while the saved items stay in the global
+				//    save ("items vanished after resuming"). Activate the bank around the
+				//    DontDestroyOnLoad hook pass so the special hooks always fire (it
+				//    stays active once the world loads).
+				harmony.Patch(AccessTools.Method(typeof(SaveController), "ExecuteDontDestroyOnLoadSaveLoadFunctions"),
+					prefix: new HarmonyMethod(typeof(BankPatches), nameof(BankPatches.DontDestroyOnLoadHooksPrefix)));
 			}
 			catch (System.Exception e)
 			{
@@ -324,6 +338,16 @@ namespace BankInventoryMod
 			StoragePanelUI ui = Inventory.instance.storagePanelUI;
 			Transform root = ui.transform;
 			Transform existing = FindDeep(root, QuickStackButtonName);
+
+			// Config option: when the STACK button is disabled, remove it (if it was
+			// created earlier) and never re-create it.
+			if (!stackButton.Value)
+			{
+				if (existing != null)
+					UnityEngine.Object.Destroy(existing.gameObject);
+				return;
+			}
+
 			if (existing != null)
 			{
 				// TradePanel flows hide sort/takeAll; keep our button in the same state.
@@ -569,6 +593,26 @@ namespace BankInventoryMod
 			if (stack != null && stack.itemId > -1 && stack.itemAmount > 0 && stack.itemReference == null)
 			{
 				stack.SetItemReference();
+			}
+		}
+
+		/// <summary>Before the game dispatches the "special" save/load hooks to
+		/// DontDestroyOnLoad objects, make sure the bank GameObject is active: the hook
+		/// loop (SaveController.ExecuteChildSaveLoadFunctions) only calls SavableScript
+		/// hooks on active-in-hierarchy objects, and on a cold load (Continue / Load from
+		/// the main menu) the bank is still inactive because the world doesn't exist yet.
+		/// Without this, OnLoadingGameSpecial() is skipped and the bank starts from its
+		/// empty freshly-created storageSlots even though its items are in the save file —
+		/// the "items vanished after resuming (mines autosave)" report. Activating is
+		/// safe here: the bank needs no Storage.Start()/Initialize() while active
+		/// (BankStorage.Setup marks the base lifecycle done), and once the world loads
+		/// the bank is supposed to be active anyway.</summary>
+		internal static void DontDestroyOnLoadHooksPrefix()
+		{
+			BankStorage bank = BankStorage.Instance;
+			if (bank != null && !bank.gameObject.activeSelf)
+			{
+				bank.gameObject.SetActive(true);
 			}
 		}
 	}

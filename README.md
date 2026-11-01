@@ -11,7 +11,7 @@ AIGC:
 
 # Obenseuer-BankInventory (BepInEx 6)
 
-**Version 1.1.0** (BepInEx 6 edition)
+**Version 1.1.2** (BepInEx 6 edition)
 
 ## Installation (BepInEx 6)
 
@@ -51,6 +51,7 @@ The config file `BepInEx/config/com.juanberta.obenseuer.bankinventory.cfg` is ge
 | General | `OpenBankKey` | `O` | Key that opens/closes the bank inventory (default `O`; `B` is used by the game's Head Lamp Use) |
 | General | `NextPageKey` | `Shift + ]` (RightBracket) | Key to go to the next bank page |
 | General | `PreviousPageKey` | `Shift + [` (LeftBracket) | Key to go to the previous bank page |
+| General | `StackButton` | `true` | Show the mod's STACK button next to Sort / Take All in the bank panel. Set to `false` if you use Inventory Tweaks and don't want a second STACK button |
 | Storage | `BaseCapacity` | `30` | Initial number of slots. The bank expands automatically when it becomes full |
 | Storage | `PageSize` | `88` | Slots shown per page (the game UI grid supports 88 slots) |
 

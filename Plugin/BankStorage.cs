@@ -80,6 +80,23 @@ namespace BankInventoryMod
 			{
 				startItemsField.SetValue(this, new ItemStack[0]);
 			}
+
+			// The base Storage.Start() builds SlotController instances from storageSlots
+			// and touches Inventory.instance (storagePanelUI) — neither is safe while the
+			// world may not exist yet (main menu / cold load), and the bank doesn't need
+			// it: Setup()/RebuildSlots() build Slots and the plugin drives the UI itself.
+			// Mark the base lifecycle done so activating the object (including the load
+			// hook pass) never runs Start()/Initialize() on the bank.
+			FieldInfo startDoneField = typeof(Storage).GetField("startDone", BindingFlags.NonPublic | BindingFlags.Instance);
+			if (startDoneField != null)
+			{
+				startDoneField.SetValue(this, true);
+			}
+			initialized = true;
+
+			// Mirror the singleton so the Harmony patch (and future callers) can find the
+			// bank instance without depending on the plugin's private field.
+			_instance = this;
 		}
 
 		/// <summary>Save support: the bank object lives in the DontDestroyOnLoad scene, so the
