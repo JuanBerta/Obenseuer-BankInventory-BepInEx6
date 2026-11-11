@@ -10,7 +10,7 @@ using OS.Items;
 
 namespace BankInventoryMod
 {
-	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.4.0")]
+	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.5.0")]
 	public class BankInventoryPlugin : BaseUnityPlugin
 	{
 		private BankStorage bank;
@@ -44,6 +44,7 @@ namespace BankInventoryMod
 
 			// Take ingredients from the bank at crafting stations and furniture workbenches.
 			CraftFromBank.Init(Config, Logger, gameObject);
+			BankSearch.Init(gameObject, new Harmony("com.juanberta.obenseuer.bankinventory.search"));
 
 			SceneManager.sceneLoaded += OnSceneLoaded;
 			EnsureBankExists();
@@ -141,7 +142,8 @@ namespace BankInventoryMod
 			}
 
 			// Page navigation.
-			DetectPageKeys();
+			if (!BankSearch.Typing && !BankSearch.Active)
+				DetectPageKeys();
 
 			// Infinite storage: if every slot is occupied, grow by one page immediately.
 			// This also guarantees the player can never "drop" items on the floor when
@@ -294,8 +296,35 @@ namespace BankInventoryMod
 		/// <summary>Show only the slots belonging to the current page, hide the rest.
 		/// Hidden slots keep their UI objects (so "Take All" and other game code that
 		/// touches every slot never hits a null slot) but are not laid out by the grid.</summary>
+		internal bool BankOpen { get { return bankOpen; } }
+
+		/// <summary>Re-apply the page/search view and the header (used by the search box).</summary>
+		internal void RefreshView()
+		{
+			if (!bankOpen) return;
+			ApplyPageVisibility();
+			UpdateTitle();
+		}
+
+		private string lastTitle;
+
 		private void ApplyPageVisibility()
 		{
+			if (BankSearch.Active)
+			{
+				// Searching: show the matching stacks from every page (one page worth at most).
+				int shown = 0;
+				for (int i = 0; i < bank.Slots.Length; i++)
+				{
+					SlotController sc = bank.Slots[i];
+					if (sc == null || sc.slot == null || sc.slot.gameObject == null) continue;
+					bool show = shown < bank.PageSize && BankSearch.Matches(sc.itemStack);
+					if (show) shown++;
+					if (sc.slot.gameObject.activeSelf != show) sc.slot.gameObject.SetActive(show);
+				}
+				return;
+			}
+
 			int start = bank.GetPageStart(bank.CurrentPage);
 			int end = bank.GetPageEnd(bank.CurrentPage);
 
@@ -333,7 +362,16 @@ namespace BankInventoryMod
 		private void UpdateTitle()
 		{
 			int total = bank.TotalPages;
-			bank.title = "Bank Inventory \u2014 Page " + (bank.CurrentPage + 1) + "/" + total;
+			string title = "Bank Inventory \u2014 Page " + (bank.CurrentPage + 1) + "/" + total;
+			if (BankSearch.Active)
+			{
+				int found = 0;
+				foreach (SlotController sc in bank.Slots) if (sc != null && BankSearch.Matches(sc.itemStack)) found++;
+				title = "Bank Inventory \u2014 " + found + " found" + (found > bank.PageSize ? " (first " + bank.PageSize + ")" : "");
+			}
+			if (BankSearch.Active && title == lastTitle && bank.title == title) return;
+			lastTitle = title;
+			bank.title = title;
 
 			if (Inventory.instance != null && Inventory.instance.storagePanelUI != null)
 				Inventory.instance.storagePanelUI.UpdateStoragePanelUI(bank);

@@ -11,7 +11,7 @@ AIGC:
 
 # Obenseuer-BankInventory (BepInEx 6)
 
-**Version 1.4.0** (BepInEx 6 edition)
+**Version 1.5.0** (BepInEx 6 edition)
 
 ## Installation (BepInEx 6)
 
@@ -27,6 +27,7 @@ A BepInEx 6 mod for [Obenseuer](https://store.steampowered.com/app/1554640/Obens
 - Deposit items from your inventory by dragging them into the bank (or use the game's "take all" button to withdraw everything).
 - **Stack button**: moves matching items from your main inventory into the bank in two passes (top up existing stacks, then place the rest into free slots), inspired by LOMS' Inventory Tweaks. It only uses the player main inventory as the source and never touches the Backpack item (14930).
 - **Infinite storage**: starts with 30 slots; whenever the storage becomes full it automatically grows by one page. You can never lose items to the floor because there is always at least one free slot.
+- **Search**: a search box at the top of the screen filters the bank to matching stacks from every page (name, liquid inside or category).
 - **Multiple pages**: the UI shows 88 slots per page; navigate with `Shift + [` / `Shift + ]` (previous / next page).
 - **Take ingredients from the bank**: at a crafting station, a button moves only the missing ingredients for the shown recipe from the bank into the station (the game's own matching: item groups, liquids, amounts). At a furniture workbench it moves the missing materials into your inventory. Choose the amount with - / + / Max (Max = what the station and bank can cover). A second button sends the station's items (or the blueprint's materials you carry) back to the bank. Optional auto-fill when you pick a recipe. Works alongside Craft From Storage.
 - **Tenement upgrades from the bank**: upgrades and renovations count the materials in the bank and take from it only what the tenement storages and your inventory are missing (`[Tenement] UseBankForUpgrades`).

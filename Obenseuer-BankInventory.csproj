@@ -90,6 +90,7 @@
     </Reference>
     <Compile Include="Plugin\BankStorage.cs" />
     <Compile Include="Plugin\CraftFromBank.cs" />
+    <Compile Include="Plugin\BankSearch.cs" />
     <Compile Include="Plugin\BankInventoryPlugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

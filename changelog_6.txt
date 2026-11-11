@@ -1,6 +1,10 @@
 Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.5.0 (2026-11-11)
+--------------------
+- Search the bank: while the bank is open, a search box at the top of the screen filters it to the matching stacks from every page (by item name, the liquid inside, or category). The header shows how many were found. Esc or the x clears it. Game and mod hotkeys are muted while you type.
+
 v1.4.0 (2026-11-11)
 --------------------
 - Choose how many to gather: the bank bar at a crafting station or furniture workbench has -, + (Shift = 10 at a time) and Max, where Max is how many crafts (or pieces of furniture) the station/inventory plus the bank can cover. Tools needed by a recipe are only gathered once.
