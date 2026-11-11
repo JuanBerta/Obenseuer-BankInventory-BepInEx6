@@ -10,7 +10,7 @@ using OS.Items;
 
 namespace BankInventoryMod
 {
-	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.2.0")]
+	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.2.1")]
 	public class BankInventoryPlugin : BaseUnityPlugin
 	{
 		private BankStorage bank;
@@ -132,6 +132,14 @@ namespace BankInventoryMod
 			if (!bankOpen)
 				return;
 
+			// Another storage took over the panel (the backpack with its hotkey, a container...):
+			// release the bank's slot UIs so they don't stay in the panel next to the new ones.
+			if (Inventory.instance.ForeignSlots != null && Inventory.instance.ForeignSlots != bank.Slots)
+			{
+				ReleaseBankPanel();
+				return;
+			}
+
 			// Page navigation.
 			DetectPageKeys();
 
@@ -205,6 +213,17 @@ namespace BankInventoryMod
 
 			if (GameUIController.instance != null)
 				GameUIController.instance.HideGameMenu();
+		}
+
+		/// <summary>The panel now shows another storage: drop the bank's slot UIs and state,
+		/// but leave the game's menu open (it belongs to the other storage now).</summary>
+		private void ReleaseBankPanel()
+		{
+			if (!bankOpen)
+				return;
+			bankOpen = false;
+			UnbindAllSlots();
+			bank.title = "Bank Inventory";
 		}
 
 		private void ChangePage(int delta)

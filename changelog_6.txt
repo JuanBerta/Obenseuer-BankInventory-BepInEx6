@@ -1,6 +1,12 @@
 Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.2.1 (2026-11-11)
+--------------------
+Fixes
+  * Opening the backpack (its hotkey) or another storage while the bank is open no
+    longer leaves the bank's slots in the panel, which made it overflow the frame.
+
 v1.2.0 (2026-11-11)
 --------------------
 New
