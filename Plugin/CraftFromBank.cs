@@ -33,6 +33,7 @@ namespace BankInventoryMod
 			try { new Harmony("com.juanberta.obenseuer.bankinventory.craft").PatchAll(typeof(CraftFromBank.Hooks)); }
 			catch (Exception e) { logger.LogWarning("Craft from bank patches: " + e.Message); }
 			host.AddComponent<CraftFromBankUI>();
+			TenementFromBank.Init(cfg, logger);
 		}
 
 		// ---- What the player is looking at ----
@@ -94,7 +95,7 @@ namespace BankInventoryMod
 
 		// ---- Bank stacks that may be used ----
 
-		private static IEnumerable<SlotController> BankSlots()
+		internal static IEnumerable<SlotController> BankSlots()
 		{
 			BankStorage bank = BankStorage.Instance;
 			if (bank == null || bank.Slots == null) yield break;
@@ -258,7 +259,7 @@ namespace BankInventoryMod
 
 		// ---- Helpers ----
 
-		private static void Shrink(SlotController from, int moved)
+		internal static void Shrink(SlotController from, int moved)
 		{
 			ItemStack st = from.itemStack;
 			st.itemAmount -= moved;
@@ -398,6 +399,111 @@ namespace BankInventoryMod
 				}
 				catch (Exception e) { CraftFromBank.Notify("Couldn't take the items: " + e.Message); }
 				nextCheck = 0f;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Tenement upgrades and renovations can use materials kept in the bank. The game looks in the tenement's
+	/// resource storages and your inventory; the bank fills whatever those don't have, and is only taken from
+	/// for that shortfall when the upgrade is paid.
+	/// </summary>
+	internal static class TenementFromBank
+	{
+		internal static ConfigEntry<bool> Enabled;
+		private static ManualLogSource log;
+
+		internal static void Init(ConfigFile cfg, ManualLogSource logger)
+		{
+			log = logger;
+			Enabled = cfg.Bind("Tenement", "UseBankForUpgrades", true,
+				"Tenement upgrades and renovations can use materials from the bank (after the tenement storages and your inventory).");
+			try { new Harmony("com.juanberta.obenseuer.bankinventory.tenement").PatchAll(typeof(TenementFromBank.Hooks)); }
+			catch (Exception e) { logger.LogWarning("Tenement from bank patches: " + e.Message); }
+		}
+
+		internal static int BankCount(int id)
+		{
+			int n = 0;
+			foreach (SlotController sc in CraftFromBank.BankSlots())
+				if (sc.itemStack.itemId == id) n += sc.itemStack.itemAmount;
+			return n;
+		}
+
+		private static int TakeFromBank(int id, int amount)
+		{
+			int taken = 0;
+			var stacks = new List<SlotController>();
+			foreach (SlotController sc in CraftFromBank.BankSlots()) if (sc.itemStack.itemId == id) stacks.Add(sc);
+			foreach (SlotController sc in stacks)
+			{
+				if (taken >= amount) break;
+				int k = Mathf.Min(amount - taken, sc.itemStack.itemAmount);
+				if (k <= 0) continue;
+				CraftFromBank.Shrink(sc, k);
+				taken += k;
+			}
+			return taken;
+		}
+
+		// What the game itself will find: the tenement resource storages plus the inventory.
+		private static float VanillaHave(TenementController tc, int id)
+		{
+			float n = 0f;
+			var storages = Traverse.Create(tc).Field("tenementResourceStorages").GetValue<List<Storage>>();
+			if (storages != null) foreach (Storage s in storages) if (s != null) n += s.GetItemAmount(id);
+			if (Inventory.instance != null) n += Inventory.instance.GetItemAmountInInventory(id);
+			return n;
+		}
+
+		internal static class Hooks
+		{
+			[HarmonyPatch(typeof(TenementController), "GetItemAmount")]
+			[HarmonyPostfix]
+			[HarmonyPriority(Priority.Low)]
+			private static void GetItemAmount_Postfix(int id, ref float __result)
+			{
+				if (!Enabled.Value) return;
+				try { __result += BankCount(id); } catch (Exception) { }
+			}
+
+			[HarmonyPatch(typeof(TenementController), "CheckForItem")]
+			[HarmonyPostfix]
+			[HarmonyPriority(Priority.Low)]
+			private static void CheckForItem_Postfix(TenementController __instance, int id, float amount, TenementContractor contractor, ref bool __result)
+			{
+				if (__result || !Enabled.Value) return;
+				try
+				{
+					int bank = BankCount(id);
+					if (bank <= 0) return;
+					// The game said no: see whether the bank covers the rest.
+					float have = contractor == null || contractor == Traverse.Create(__instance).Field("currentSceneContractor").GetValue<TenementContractor>()
+						? VanillaHave(__instance, id)
+						: __instance.GetItemAmount(id, contractor) - bank;   // remote tenement: the game's snapshot
+					if (have + bank >= amount) __result = true;
+				}
+				catch (Exception) { }
+			}
+
+			// Runs after other mods' prefixes (Craft From Storage pays from nearby chests itself when they
+			// have enough); here only the part the tenement storages + inventory can't cover comes from the bank.
+			[HarmonyPatch(typeof(TenementController), "RemoveRequiredItems")]
+			[HarmonyPrefix]
+			[HarmonyPriority(Priority.Low)]
+			private static void RemoveRequiredItems_Prefix(TenementController __instance, int id, ref int amount, bool __runOriginal)
+			{
+				if (!__runOriginal || !Enabled.Value || amount <= 0) return;
+				try
+				{
+					int shortfall = amount - Mathf.FloorToInt(VanillaHave(__instance, id) + 0.0001f);
+					if (shortfall <= 0) return;
+					int taken = TakeFromBank(id, shortfall);
+					if (taken <= 0) return;
+					amount -= taken;
+					if (log != null) log.LogInfo("Tenement upgrade: took " + taken + " x item " + id + " from the bank.");
+				}
+				catch (Exception e) { if (log != null) log.LogWarning("Tenement from bank: " + e.Message); }
 			}
 		}
 	}

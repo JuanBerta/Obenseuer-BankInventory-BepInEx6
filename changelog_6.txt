@@ -1,6 +1,12 @@
 Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.3.0 (2026-11-11)
+--------------------
+- Tenement upgrades and renovations can use materials from the bank. The game still uses the tenement storages and your inventory first; the bank covers whatever is missing, and only that part is taken from it. The upgrade window counts bank items too.
+- New config: [Tenement] UseBankForUpgrades (default on).
+- Works alongside Craft From Storage: when its nearby chests cover the cost it pays as usual, otherwise the bank fills the gap.
+
 v1.2.3 (2026-11-11)
 --------------------
 - Fixed "Take ingredients from bank" never finding anything in the bank (a number precision bug made every bank stack look useless), so the button now really moves the missing ingredients into the station.
