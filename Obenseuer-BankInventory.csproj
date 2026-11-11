@@ -80,7 +80,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Obenseuer\Obenseuer_Data\Managed\UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
+    <Reference Include="UnityEngine.TextRenderingModule">
+      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Obenseuer\Obenseuer_Data\Managed\UnityEngine.TextRenderingModule.dll</HintPath>
+      <Private>False</Private>
+    </Reference>
     <Compile Include="Plugin\BankStorage.cs" />
+    <Compile Include="Plugin\CraftFromBank.cs" />
     <Compile Include="Plugin\BankInventoryPlugin.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>

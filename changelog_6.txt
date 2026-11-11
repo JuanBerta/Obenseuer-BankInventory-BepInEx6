@@ -1,6 +1,23 @@
 Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.2.0 (2026-11-11)
+--------------------
+New
+  * Take ingredients from the bank. While a crafting station is open with a recipe
+    shown, a "Take ingredients from bank" button at the top of the screen moves only
+    the missing ingredients from the bank into the station's input slots. The game's
+    own recipe matching decides what counts (item groups, liquids in containers,
+    ammo), and the recipe amount you picked is respected.
+  * At a furniture workbench the button moves the blueprint's missing materials
+    from the bank into your inventory.
+  * The items really move, so the game and other crafting mods (such as Craft From
+    Storage) craft as usual. Nothing is taken that the recipe doesn't need.
+  * Optional AutoFillOnRecipe (off by default): fill automatically when you pick a
+    recipe or change the amount. UseStolenItems (off by default) also uses items
+    owned by someone else. TakeIngredientsButton turns the feature off.
+  * The Backpack item (14930) is never moved.
+
 v1.1.0 (2026-10-27)
 --------------------
 Fixes

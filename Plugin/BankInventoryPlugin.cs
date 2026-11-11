@@ -10,7 +10,7 @@ using OS.Items;
 
 namespace BankInventoryMod
 {
-	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.1.2")]
+	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.2.0")]
 	public class BankInventoryPlugin : BaseUnityPlugin
 	{
 		private BankStorage bank;
@@ -41,6 +41,9 @@ namespace BankInventoryMod
 				"How many slots are shown per page (the game UI grid supports 88 slots).");
 			stackButton = Config.Bind("General", "StackButton", true,
 				"Show the mod's STACK button next to Sort / Take All in the bank panel. Set to false if you use Inventory Tweaks and don't want a second STACK button.");
+
+			// Take ingredients from the bank at crafting stations and furniture workbenches.
+			CraftFromBank.Init(Config, Logger, gameObject);
 
 			SceneManager.sceneLoaded += OnSceneLoaded;
 			EnsureBankExists();
