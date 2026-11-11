@@ -41,6 +41,7 @@ namespace BankInventoryMod
 		private static Recipe lastRecipe;
 		private static CraftingBase lastStation;
 		internal static int ShownMultiplier = 1;
+		internal static int Amount = 1;   // how many crafts / pieces of furniture to gather for
 		private static RecipeInfoUI recipePanel;
 
 		// The recipe to fill for: the one the info panel shows, or else the last one you hovered or
@@ -132,8 +133,12 @@ namespace BankInventoryMod
 			if (recipe.Input == null) recipe.SetItems();
 			if (recipe.Input == null) return moves;
 			Recipe.RecipeRequirementData[] reqs = CraftingBaseHelperFunctions.CreateRequirements(recipe, true);
+			// Tools (utility items, tableware...) are needed once, not once per craft: the game marks them
+			// with amount 0 when it asks for "non-executable" requirements.
+			Recipe.RecipeRequirementData[] consumed = CraftingBaseHelperFunctions.CreateRequirements(recipe, false);
 			int mult = Mathf.Max(1, multiplier);
-			foreach (var r in reqs) r.requiredAmount *= mult;
+			for (int i = 0; i < reqs.Length; i++)
+				if (i >= consumed.Length || consumed[i].requiredAmount > 0f) reqs[i].requiredAmount *= mult;
 			foreach (ItemStack st in station.InputSlots)
 			{
 				if (st == null || st.itemId < 0 || st.itemAmount <= 0) continue;
@@ -202,7 +207,7 @@ namespace BankInventoryMod
 
 		// ---- Furniture workbench: blueprint materials into the inventory ----
 
-		internal static List<Move> PlanBlueprint(TaskItemBlueprint bp, out int stillMissing, out int missingBefore)
+		internal static List<Move> PlanBlueprint(TaskItemBlueprint bp, int count, out int stillMissing, out int missingBefore)
 		{
 			var moves = new List<Move>();
 			stillMissing = 0; missingBefore = 0;
@@ -212,7 +217,7 @@ namespace BankInventoryMod
 			{
 				if (res == null || res.item == null || res.item.Item == null) continue;   // furniture parts aren't items
 				int have = Mathf.FloorToInt(Inventory.instance.CountItems(res.item));
-				int need = res.amount - have;
+				int need = res.amount * Mathf.Max(1, count) - have;
 				if (need <= 0) continue;
 				missingBefore++;
 				foreach (SlotController sc in BankSlots())
@@ -231,10 +236,10 @@ namespace BankInventoryMod
 			return moves;
 		}
 
-		internal static string FillBlueprint(TaskItemBlueprint bp)
+		internal static string FillBlueprint(TaskItemBlueprint bp, int count)
 		{
 			int still, before;
-			List<Move> moves = PlanBlueprint(bp, out still, out before);
+			List<Move> moves = PlanBlueprint(bp, count, out still, out before);
 			if (before == 0) return "You already carry all the materials.";
 			if (moves.Count == 0) return "The bank has none of the missing materials.";
 			int movedStacks = 0, full = 0;
@@ -255,6 +260,117 @@ namespace BankInventoryMod
 			if (full > 0) msg += " Your inventory ran out of room.";
 			else if (still > 0) msg += " The bank didn't have everything.";
 			return msg;
+		}
+
+		// ---- How many crafts the station + bank can cover ----
+
+		internal const int MaxAmount = 999;
+
+		internal static int MaxStation(CraftingBase station, Recipe recipe)
+		{
+			int still, before;
+			Func<int, bool> ok = n => { PlanStation(station, recipe, n, out still, out before); return still == 0; };
+			if (!ok(1)) return 0;
+			int lo = 1, hi = 2;
+			while (hi <= MaxAmount && ok(hi)) { lo = hi; hi *= 2; }
+			if (hi > MaxAmount) { if (ok(MaxAmount)) return MaxAmount; hi = MaxAmount; }
+			while (hi - lo > 1) { int mid = (lo + hi) / 2; if (ok(mid)) lo = mid; else hi = mid; }
+			return lo;
+		}
+
+		internal static int MaxBlueprint(TaskItemBlueprint bp)
+		{
+			if (bp == null || bp.resourceItems == null || Inventory.instance == null) return 0;
+			int max = MaxAmount; bool any = false;
+			foreach (var res in bp.resourceItems)
+			{
+				if (res == null || res.item == null || res.item.Item == null || res.amount <= 0) continue;
+				any = true;
+				int have = Mathf.FloorToInt(Inventory.instance.CountItems(res.item)) + TenementFromBank.BankCount(res.item.ID);
+				max = Mathf.Min(max, have / res.amount);
+			}
+			return any ? max : 0;
+		}
+
+		// ---- Back to the bank ----
+
+		// Puts a stack into the bank, growing it by a page if it's full. Returns how many went in.
+		private static int ToBank(Item item, int amount, int owner, object[] meta)
+		{
+			BankStorage bank = BankStorage.Instance;
+			if (bank == null || amount <= 0) return 0;
+			int remaining = bank.AddItemAndReturnRemaining(item, amount, owner, Item.CloneMeta(meta));
+			for (int tries = 0; remaining > 0 && tries < 3; tries++)
+			{
+				bank.ExpandByPage(Mathf.Max(1, bank.PageSize));
+				remaining = bank.AddItemAndReturnRemaining(item, remaining, owner, Item.CloneMeta(meta));
+			}
+			return amount - Mathf.Max(0, remaining);
+		}
+
+		private static IEnumerable<SlotController> Movable(SlotController[] slots)
+		{
+			if (slots == null) yield break;
+			foreach (SlotController sc in slots)
+			{
+				if (sc == null || sc.itemStack == null || sc.itemStack.itemId < 0 || sc.itemStack.itemAmount <= 0) continue;
+				if (sc.itemStack.itemId == 14930) continue;   // the Backpack item stays where it is
+				if (sc.itemStack.itemReference == null) sc.itemStack.SetItemReference();
+				if (sc.itemStack.itemReference == null || sc.itemStack.itemReference.Item == null) continue;
+				yield return sc;
+			}
+		}
+
+		internal static int StationReturnCount(CraftingBase station)
+		{
+			int n = 0;
+			try { foreach (SlotController sc in Movable(station.InputOutputStorage.Slots)) n++; } catch (Exception) { }
+			return n;
+		}
+
+		internal static string ReturnStation(CraftingBase station)
+		{
+			var list = new List<SlotController>(Movable(station.InputOutputStorage.Slots));
+			int moved = 0;
+			foreach (SlotController sc in list)
+			{
+				ItemStack st = sc.itemStack;
+				int k = ToBank(st.itemReference.Item, st.itemAmount, st.ownerId, st.Meta);
+				if (k <= 0) continue;
+				Shrink(sc, k);
+				moved++;
+			}
+			Refresh(station.InputOutputStorage);
+			try { station.CheckItems(true); } catch (Exception) { }
+			return moved == 0 ? "Nothing could be moved to the bank." : "Moved " + moved + " stack" + (moved > 1 ? "s" : "") + " from the station to the bank.";
+		}
+
+		private static List<SlotController> InventoryMaterials(TaskItemBlueprint bp)
+		{
+			var list = new List<SlotController>();
+			if (bp == null || bp.resourceItems == null || Inventory.instance == null) return list;
+			var ids = new HashSet<int>();
+			foreach (var res in bp.resourceItems) if (res != null && res.item != null && res.item.Item != null) ids.Add(res.item.ID);
+			foreach (SlotController sc in Movable(Inventory.instance.Slots))
+				if (ids.Contains(sc.itemStack.itemId) && (UseStolen.Value || sc.itemStack.ownerId <= 1)) list.Add(sc);
+			return list;
+		}
+
+		internal static int BlueprintReturnCount(TaskItemBlueprint bp) { return InventoryMaterials(bp).Count; }
+
+		internal static string ReturnBlueprint(TaskItemBlueprint bp)
+		{
+			int moved = 0;
+			foreach (SlotController sc in InventoryMaterials(bp))
+			{
+				ItemStack st = sc.itemStack;
+				int k = ToBank(st.itemReference.Item, st.itemAmount, st.ownerId, st.Meta);
+				if (k <= 0) continue;
+				Shrink(sc, k);
+				moved++;
+			}
+			try { Inventory.instance.UpdateAllSlots(); } catch (Exception) { }
+			return moved == 0 ? "You carry none of this blueprint's materials." : "Moved " + moved + " stack" + (moved > 1 ? "s" : "") + " of materials to the bank.";
 		}
 
 		// ---- Helpers ----
@@ -292,8 +408,8 @@ namespace BankInventoryMod
 			CraftingBase st = Station;
 			if (st == null || ShownRecipe == null) return;
 			int still, before;
-			if (PlanStation(st, ShownRecipe, ShownMultiplier, out still, out before).Count == 0) return;
-			Notify(FillStation(st, ShownRecipe, ShownMultiplier));
+			if (PlanStation(st, ShownRecipe, Amount, out still, out before).Count == 0) return;
+			Notify(FillStation(st, ShownRecipe, Amount));
 		}
 
 		internal static class Hooks
@@ -324,14 +440,17 @@ namespace BankInventoryMod
 		}
 	}
 
-	/// <summary>The "Take ingredients from bank" button, at the top of the screen while a station is open.</summary>
+	/// <summary>The bank bar at the top of the screen while a station or workbench is open:
+	/// amount (- / + / Max), "Take ingredients" and "Return to bank".</summary>
 	internal class CraftFromBankUI : MonoBehaviour
 	{
-		private GUIStyle style, hint;
+		private GUIStyle style, hint, box;
 		private float nextCheck;
-		private string label;
-		private bool usable;
+		private string takeLabel, returnLabel;
+		private bool takeUsable, returnUsable;
 		private int kind;   // 1 = station, 2 = workbench
+		private int max;
+		private object lastTarget;
 
 		private static Texture2D Tex(Color fill, Color edge)
 		{
@@ -346,7 +465,12 @@ namespace BankInventoryMod
 			try { CraftFromBank.TickAuto(); } catch (Exception) { }
 			if (Time.unscaledTime < nextCheck) return;
 			nextCheck = Time.unscaledTime + 0.3f;
-			kind = 0; label = null; usable = false;
+			Recalc();
+		}
+
+		private void Recalc()
+		{
+			kind = 0; takeLabel = returnLabel = null; takeUsable = returnUsable = false;
 			if (!CraftFromBank.Enabled.Value || BankStorage.Instance == null) return;
 			try
 			{
@@ -355,51 +479,98 @@ namespace BankInventoryMod
 				if (st != null && CraftFromBank.ShownRecipe != null)
 				{
 					kind = 1;
-					var plan = CraftFromBank.PlanStation(st, CraftFromBank.ShownRecipe, CraftFromBank.ShownMultiplier, out still, out before);
-					usable = plan.Count > 0;
-					string name = CraftFromBank.ShownRecipe.Name;
-					label = before == 0 ? name + ": station has all ingredients" : usable ? "Take ingredients for " + name + " from bank (" + plan.Count + ")" : name + ": bank has none of the missing ingredients";
+					Recipe r = CraftFromBank.ShownRecipe;
+					if (!ReferenceEquals(r, lastTarget)) { lastTarget = r; CraftFromBank.Amount = 1; }
+					max = CraftFromBank.MaxStation(st, r);
+					int n = CraftFromBank.Amount;
+					var plan = CraftFromBank.PlanStation(st, r, n, out still, out before);
+					takeUsable = plan.Count > 0;
+					string what = (n > 1 ? n + "x " : "") + r.Name;
+					takeLabel = before == 0 ? "Station has everything for " + what : takeUsable ? "Take ingredients for " + what + " (" + plan.Count + ")" : what + ": bank has none of the missing ingredients";
+					int back = CraftFromBank.StationReturnCount(st);
+					returnUsable = back > 0;
+					returnLabel = "Station items to bank" + (back > 0 ? " (" + back + ")" : "");
 				}
 				else if (CraftFromBank.WorkbenchOpen && CraftFromBank.ShownBlueprint != null)
 				{
 					kind = 2;
-					var plan = CraftFromBank.PlanBlueprint(CraftFromBank.ShownBlueprint, out still, out before);
-					usable = plan.Count > 0;
-					label = before == 0 ? "You carry all the materials" : usable ? "Take materials from bank (" + plan.Count + ")" : "Bank has none of the missing materials";
+					TaskItemBlueprint bp = CraftFromBank.ShownBlueprint;
+					if (!ReferenceEquals(bp, lastTarget)) { lastTarget = bp; CraftFromBank.Amount = 1; }
+					max = CraftFromBank.MaxBlueprint(bp);
+					int n = CraftFromBank.Amount;
+					var plan = CraftFromBank.PlanBlueprint(bp, n, out still, out before);
+					takeUsable = plan.Count > 0;
+					string what = n > 1 ? " for " + n + "x" : "";
+					takeLabel = before == 0 ? "You carry the materials" + what : takeUsable ? "Take materials" + what + " from bank (" + plan.Count + ")" : "Bank has none of the missing materials";
+					int back = CraftFromBank.BlueprintReturnCount(bp);
+					returnUsable = back > 0;
+					returnLabel = "Materials to bank" + (back > 0 ? " (" + back + ")" : "");
 				}
 			}
 			catch (Exception) { kind = 0; }
 		}
 
+		private void Styles()
+		{
+			if (style != null && style.normal.background != null) return;
+			style = new GUIStyle(GUI.skin.button) { fontSize = 14, fontStyle = FontStyle.Bold, padding = new RectOffset(12, 12, 7, 7), border = new RectOffset(2, 2, 2, 2) };
+			style.normal.background = Tex(new Color(0.42f, 0.29f, 0.08f, 0.95f), new Color(0.79f, 0.6f, 0.23f));
+			style.hover.background = Tex(new Color(0.6f, 0.42f, 0.12f, 0.95f), new Color(0.95f, 0.75f, 0.35f));
+			style.active.background = Tex(new Color(0.79f, 0.6f, 0.23f, 0.95f), new Color(0.95f, 0.75f, 0.35f));
+			style.normal.textColor = style.hover.textColor = new Color(0.98f, 0.93f, 0.8f);
+			style.active.textColor = new Color(0.14f, 0.11f, 0.08f);
+			hint = new GUIStyle(style);
+			hint.normal.background = hint.hover.background = hint.active.background = Tex(new Color(0.1f, 0.09f, 0.08f, 0.85f), new Color(0.35f, 0.32f, 0.27f));
+			hint.normal.textColor = hint.hover.textColor = hint.active.textColor = new Color(0.66f, 0.62f, 0.53f);
+			box = new GUIStyle(hint) { alignment = TextAnchor.MiddleCenter };
+			box.normal.textColor = box.hover.textColor = box.active.textColor = new Color(0.98f, 0.93f, 0.8f);
+		}
+
+		private bool Btn(ref float x, float y, string text, bool usable, GUIStyle forced = null)
+		{
+			GUIStyle s = forced ?? (usable ? style : hint);
+			Vector2 size = s.CalcSize(new GUIContent(text));
+			bool hit = GUI.Button(new Rect(x, y, size.x, size.y), text, s) && usable;
+			x += size.x + 6f;
+			return hit;
+		}
+
+		private float Width(string text, GUIStyle s) { return s.CalcSize(new GUIContent(text)).x + 6f; }
+
 		private void OnGUI()
 		{
-			if (kind == 0 || label == null || !Cursor.visible) return;
-			if (style == null || style.normal.background == null)
-			{
-				style = new GUIStyle(GUI.skin.button) { fontSize = 14, fontStyle = FontStyle.Bold, padding = new RectOffset(14, 14, 7, 7), border = new RectOffset(2, 2, 2, 2) };
-				style.normal.background = Tex(new Color(0.42f, 0.29f, 0.08f, 0.95f), new Color(0.79f, 0.6f, 0.23f));
-				style.hover.background = Tex(new Color(0.6f, 0.42f, 0.12f, 0.95f), new Color(0.95f, 0.75f, 0.35f));
-				style.active.background = Tex(new Color(0.79f, 0.6f, 0.23f, 0.95f), new Color(0.95f, 0.75f, 0.35f));
-				style.normal.textColor = style.hover.textColor = new Color(0.98f, 0.93f, 0.8f);
-				style.active.textColor = new Color(0.14f, 0.11f, 0.08f);
-				hint = new GUIStyle(style);
-				hint.normal.background = hint.hover.background = hint.active.background = Tex(new Color(0.1f, 0.09f, 0.08f, 0.85f), new Color(0.35f, 0.32f, 0.27f));
-				hint.normal.textColor = hint.hover.textColor = hint.active.textColor = new Color(0.66f, 0.62f, 0.53f);
-			}
-			GUIStyle s = usable ? style : hint;
-			Vector2 size = s.CalcSize(new GUIContent(label));
-			Rect r = new Rect((Screen.width - size.x) / 2f, 12f, size.x, size.y);
-			if (GUI.Button(r, label, s) && usable)
+			if (kind == 0 || takeLabel == null || !Cursor.visible) return;
+			Styles();
+			int n = CraftFromBank.Amount;
+			string amountText = "x" + n;
+			string maxText = "Max " + max;
+			float total = Width("-", style) + Width("x999", box) + Width("+", style) + Width(maxText, style)
+			            + Width(takeLabel, takeUsable ? style : hint) + 10f + Width(returnLabel, returnUsable ? style : hint);
+			float x = Mathf.Max(8f, (Screen.width - total) / 2f), y = 12f;
+			int step = Event.current.shift ? 10 : 1;
+			bool changed = false;
+			if (Btn(ref x, y, "-", n > 1)) { CraftFromBank.Amount = Mathf.Max(1, n - step); changed = true; }
+			Vector2 asz = box.CalcSize(new GUIContent("x999"));
+			GUI.Label(new Rect(x, y, asz.x, asz.y), amountText, box); x += asz.x + 6f;
+			if (Btn(ref x, y, "+", n < CraftFromBank.MaxAmount)) { CraftFromBank.Amount = Mathf.Min(CraftFromBank.MaxAmount, n + step); changed = true; }
+			if (Btn(ref x, y, maxText, max > 0 && max != n)) { CraftFromBank.Amount = max; changed = true; }
+			bool take = Btn(ref x, y, takeLabel, takeUsable);
+			x += 10f;
+			bool back = Btn(ref x, y, returnLabel, returnUsable);
+			if (take || back)
 			{
 				try
 				{
-					string msg = kind == 1 ? CraftFromBank.FillStation(CraftFromBank.Station, CraftFromBank.ShownRecipe, CraftFromBank.ShownMultiplier)
-					                       : CraftFromBank.FillBlueprint(CraftFromBank.ShownBlueprint);
+					string msg;
+					if (take) msg = kind == 1 ? CraftFromBank.FillStation(CraftFromBank.Station, CraftFromBank.ShownRecipe, CraftFromBank.Amount)
+					                          : CraftFromBank.FillBlueprint(CraftFromBank.ShownBlueprint, CraftFromBank.Amount);
+					else msg = kind == 1 ? CraftFromBank.ReturnStation(CraftFromBank.Station) : CraftFromBank.ReturnBlueprint(CraftFromBank.ShownBlueprint);
 					CraftFromBank.Notify(msg);
 				}
-				catch (Exception e) { CraftFromBank.Notify("Couldn't take the items: " + e.Message); }
-				nextCheck = 0f;
+				catch (Exception e) { CraftFromBank.Notify("Couldn't move the items: " + e.Message); }
+				changed = true;
 			}
+			if (changed) Recalc();
 		}
 	}
 

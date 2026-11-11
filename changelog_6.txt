@@ -1,6 +1,11 @@
 Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.4.0 (2026-11-11)
+--------------------
+- Choose how many to gather: the bank bar at a crafting station or furniture workbench has -, + (Shift = 10 at a time) and Max, where Max is how many crafts (or pieces of furniture) the station/inventory plus the bank can cover. Tools needed by a recipe are only gathered once.
+- New "to bank" button: at a crafting station it moves everything in the station's slots (leftover ingredients and finished items) into the bank; at a furniture workbench it moves the blueprint's materials from your inventory into the bank. The bank grows a page if it needs room.
+
 v1.3.0 (2026-11-11)
 --------------------
 - Tenement upgrades and renovations can use materials from the bank. The game still uses the tenement storages and your inventory first; the bank covers whatever is missing, and only that part is taken from it. The upgrade window counts bank items too.
