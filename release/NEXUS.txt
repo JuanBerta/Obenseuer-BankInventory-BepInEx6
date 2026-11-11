@@ -8,6 +8,7 @@ Obenseuer-BankInventory-BepInEx5-v1.5.0.rar : Bank Inventory 1.5.0 for BepInEx 5
 === CHANGELOG (Nexus "Changelogs" tab) ===
 1.5.0
 - New: search the bank. A search box at the top of the screen filters the bank to matching stacks from every page (item name, liquid inside, or category). Hotkeys are muted while typing; Esc clears it.
+- Diegetic UI support: with Diegetic UI installed, the search box and the crafting/bank buttons use its paper look.
 1.4.0
 - Choose how many to gather at stations and workbenches: -, + (Shift = 10) and Max (what the station/inventory plus the bank can cover).
 - New "to bank" button: sends a station's items, or the blueprint materials you carry, back to the bank.
@@ -44,6 +45,7 @@ Obenseuer-BankInventory-BepInEx5-v1.5.0.rar : Bank Inventory 1.5.0 for BepInEx 5
 [size=4][b]Compatibility[/b][/size]
 [list]
 [*]Works with [b]Craft From Storage[/b]: if its nearby chests cover an upgrade it pays as usual, otherwise the bank fills the gap.
+[*]Works with [b]Diegetic UI[/b]: the search box and crafting buttons switch to its paper look automatically.
 [*]Works with [b]Inventory Tweaks[/b] (you can hide this mod's STACK button with StackButton = false).
 [/list]
 
