@@ -2,10 +2,11 @@
 A bank you can open anywhere with infinite, multi-page, searchable storage. Take crafting ingredients for as many crafts as you want straight from the bank and send leftovers back, and pay tenement upgrades with bank materials.
 
 === FILE DESCRIPTIONS ===
-Obenseuer-BankInventory-BepInEx6-v1.5.0.rar : Bank Inventory 1.5.0 for BepInEx 6. Extract into the Obenseuer folder.
-Obenseuer-BankInventory-BepInEx5-v1.5.0.rar : Bank Inventory 1.5.0 for BepInEx 5. Extract into the Obenseuer folder.
+Obenseuer-BankInventory-BepInEx6-v1.6.0.rar : Bank Inventory 1.6.0 for BepInEx 6. Extract into the Obenseuer folder.
+Obenseuer-BankInventory-BepInEx5-v1.6.0.rar : Bank Inventory 1.6.0 for BepInEx 5. Extract into the Obenseuer folder.
 
-=== CHANGELOG (Nexus "Changelogs" tab) ===
+$11.6.0
+- New: search any storage (backpack, crates, fridges...). Matching slots are outlined and the rest dimmed; the bank still filters across all its pages.
 1.5.0
 - New: search the bank. A search box at the top of the screen filters the bank to matching stacks from every page (item name, liquid inside, or category). Hotkeys are muted while typing; Esc clears it.
 - Diegetic UI support: with Diegetic UI installed, the search box and the crafting/bank buttons use its paper look.
@@ -34,6 +35,7 @@ Obenseuer-BankInventory-BepInEx5-v1.5.0.rar : Bank Inventory 1.5.0 for BepInEx 5
 [*][b]Open anywhere[/b] with [b]O[/b] (configurable). Deposit by dragging items in, withdraw with drag or Take All.
 [*][b]Infinite storage[/b]: starts with 30 slots and grows by one page whenever it gets full, so nothing ever drops on the floor.
 [*][b]Search[/b]: a search box at the top of the screen filters the bank to the matching stacks from every page, by item name, the liquid inside, or category ("food", "tool"...).
+[*][b]Search any storage[/b]: the backpack, crates, fridges and other containers get the same search box. Matching slots are outlined and the rest dimmed.
 [*][b]Pages[/b]: 88 slots per page, switch with [b]Shift + ][/b] and [b]Shift + [[/b].
 [*][b]STACK button[/b]: moves matching items from your main inventory into the bank (tops up existing stacks first). Never touches your backpack or equipment.
 [*][b]Take ingredients from the bank[/b]: at any crafting station, select a recipe and press the button at the top of the screen. Pick how many with [b]-[/b], [b]+[/b] (Shift = 10) or [b]Max[/b] (as many as the station and bank can cover), and only the missing ingredients move from the bank into the station, using the game's own recipe matching (item groups, liquids, amounts). At a furniture workbench, the missing materials move into your inventory.

@@ -8,9 +8,11 @@ using UnityEngine;
 namespace BankInventoryMod
 {
 	/// <summary>
-	/// Search box for the bank: while the bank is open, typing filters the bank to the matching stacks from
-	/// every page (by item name, the liquid inside, or category). While the box has focus, game and mod
-	/// hotkeys are muted so typing doesn't drop items, switch tabs or close the bank.
+	/// Search box for storages: while the bank is open, typing filters the bank to the matching stacks from
+	/// every page (by item name, the liquid inside, or category). Any other open storage (backpack, crates,
+	/// fridges...) gets the same box: matching slots are outlined and the rest are dimmed (display only, nothing
+	/// moves). While the box has focus, game and mod hotkeys are muted so typing doesn't drop items, switch tabs
+	/// or close the menu.
 	/// </summary>
 	internal class BankSearch : MonoBehaviour
 	{
@@ -18,7 +20,8 @@ namespace BankInventoryMod
 
 		internal static string Filter = "";
 		internal static bool Typing;
-		internal static bool Active { get { return !string.IsNullOrEmpty(Filter); } }
+		internal static bool Active { get { return InBank && !string.IsNullOrEmpty(Filter); } }   // the bank's filtered view
+		internal static bool InBank;
 
 		// Diegetic UI asks for its paper look through a shared flag (no dependency either way).
 		internal static bool PaperLook
@@ -29,7 +32,11 @@ namespace BankInventoryMod
 		private string text = "";
 		private GUIStyle field, placeholder, clear;
 		private bool wasOpen;
+		private bool bankMode;
+		private object lastStorage;
+		private int found;
 		private float nextRefresh;
+		private Texture2D dimTex, markTex;
 
 		internal static void Init(GameObject host, Harmony harmony)
 		{
@@ -60,10 +67,18 @@ namespace BankInventoryMod
 
 		private void Update()
 		{
-			bool open = Plugin != null && Plugin.BankOpen && Cursor.visible;
-			if (!open && wasOpen) { text = ""; Filter = ""; Typing = false; }
+			bool bank = Plugin != null && Plugin.BankOpen && Cursor.visible;
+			bool storage = !bank && Cursor.visible && StorageShowing();
+			bool open = bank || storage;
+			object current = open ? CurrentStorage() : null;
+			// a new storage (or closing the menu) starts with an empty box
+			if ((!open && wasOpen) || bank != bankMode || (open && wasOpen && current != lastStorage)) { text = ""; Filter = ""; Typing = false; }
 			wasOpen = open;
+			bankMode = bank;
+			InBank = bank;
+			lastStorage = current;
 			if (!open) { Typing = false; return; }
+			if (!bank) return;
 			// Keep the filtered view current as items are taken out or put in.
 			if (Active && Time.unscaledTime >= nextRefresh)
 			{
@@ -72,9 +87,35 @@ namespace BankInventoryMod
 			}
 		}
 
-		private static Rect PanelRect()
+		private static object CurrentStorage()
 		{
-			var rt = Inventory.instance.storagePanelUI.transform as RectTransform;
+			try { return Traverse.Create(Inventory.instance.storagePanelUI).Field("currentStorage").GetValue(); } catch (Exception) { return null; }
+		}
+
+		// A storage panel is on screen (the menu is open on the Inventory page with a storage beside it).
+		private static bool StorageShowing()
+		{
+			try
+			{
+				if (GameUIController.instance == null || !GameUIController.instance.IsMenuVisible) return false;
+				StoragePanelUI ui = Inventory.instance != null ? Inventory.instance.storagePanelUI : null;
+				if (ui == null || ui.storageSlotPanel == null || !ui.storageSlotPanel.activeInHierarchy) return false;
+				for (Transform p = ui.transform; p != null; p = p.parent)
+				{
+					foreach (CanvasGroup cg in p.GetComponents<CanvasGroup>())
+						if (cg.enabled && cg.alpha < 0.05f) return false;
+					Canvas c = p.GetComponent<Canvas>();
+					if (c != null && !c.enabled) return false;
+				}
+				return CurrentStorage() != null;
+			}
+			catch (Exception) { return false; }
+		}
+
+		private static Rect PanelRect() { return ScreenRect(Inventory.instance.storagePanelUI.transform as RectTransform); }
+
+		private static Rect ScreenRect(RectTransform rt)
+		{
 			var corners = new Vector3[4];
 			rt.GetWorldCorners(corners);
 			Canvas canvas = rt.GetComponentInParent<Canvas>();
@@ -118,6 +159,42 @@ namespace BankInventoryMod
 			}
 		}
 
+		// Outline the matching slots of the open storage and dim the rest.
+		private void Dim()
+		{
+			if (dimTex == null) { dimTex = Tex(new Color(0f, 0f, 0f, 0.72f), new Color(0f, 0f, 0f, 0.72f)); }
+			bool paper = PaperLook;
+			Color mark = paper ? new Color32(122, 43, 28, 255) : new Color32(242, 191, 89, 255);
+			if (markTex == null) { markTex = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave }; markTex.SetPixel(0, 0, Color.white); markTex.Apply(); }
+			found = 0;
+			Slot[] slots;
+			try { slots = Inventory.instance.storagePanelUI.storageSlotPanel.GetComponentsInChildren<Slot>(false); } catch (Exception) { return; }
+			Color keep = GUI.color;
+			foreach (Slot slot in slots)
+			{
+				if (slot == null) continue;
+				Rect r;
+				try { r = ScreenRect(slot.transform as RectTransform); } catch (Exception) { continue; }
+				// the slot's controller holds the real stack (the item widget's own copy can be empty)
+				ItemStack st = null;
+				try { st = slot.slotcontrol != null ? slot.slotcontrol.itemStack : null; } catch (Exception) { }
+				if (st == null || st.itemId < 0)
+					try { ItemData data = slot.GetItemItemData(); if (data != null) st = data.stack; } catch (Exception) { }
+				if (Matches(st))
+				{
+					found++;
+					GUI.color = mark;
+					GUI.DrawTexture(new Rect(r.x, r.y, r.width, 3f), markTex);
+					GUI.DrawTexture(new Rect(r.x, r.yMax - 3f, r.width, 3f), markTex);
+					GUI.DrawTexture(new Rect(r.x, r.y, 3f, r.height), markTex);
+					GUI.DrawTexture(new Rect(r.xMax - 3f, r.y, 3f, r.height), markTex);
+					GUI.color = keep;
+				}
+				else GUI.DrawTexture(r, dimTex);
+			}
+			GUI.color = keep;
+		}
+
 		private void OnGUI()
 		{
 			if (!wasOpen || Inventory.instance == null || Inventory.instance.storagePanelUI == null) return;
@@ -140,7 +217,12 @@ namespace BankInventoryMod
 			GUI.SetNextControlName(ControlName);
 			text = GUI.TextField(box, text ?? "", 60, field);
 			if (string.IsNullOrEmpty(text) && GUI.GetNameOfFocusedControl() != ControlName)
-				GUI.Label(box, "Search the bank (all pages)...", placeholder);
+				GUI.Label(box, bankMode ? "Search the bank (all pages)..." : "Search this storage...", placeholder);
+			if (!bankMode && !string.IsNullOrEmpty(Filter))
+			{
+				if (e.type == EventType.Repaint) Dim();
+				GUI.Label(new Rect(box.xMax - 128f, box.y, 96f, box.height), found + " found", placeholder);
+			}
 			if (!string.IsNullOrEmpty(text) && GUI.Button(new Rect(box.xMax - 28f, box.y, 28f, box.height), "x", clear))
 			{
 				text = "";
@@ -152,7 +234,7 @@ namespace BankInventoryMod
 			if (f != Filter)
 			{
 				Filter = f;
-				if (Plugin != null) Plugin.RefreshView();
+				if (bankMode && Plugin != null) Plugin.RefreshView();
 			}
 		}
 	}
