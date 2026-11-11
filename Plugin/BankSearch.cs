@@ -20,6 +20,12 @@ namespace BankInventoryMod
 		internal static bool Typing;
 		internal static bool Active { get { return !string.IsNullOrEmpty(Filter); } }
 
+		// Diegetic UI asks for its paper look through a shared flag (no dependency either way).
+		internal static bool PaperLook
+		{
+			get { object f = System.AppDomain.CurrentDomain.GetData("Obenseuer.DiegeticTheme.BankInventory"); return f is bool && (bool)f; }
+		}
+		private bool paperBuilt;
 		private string text = "";
 		private GUIStyle field, placeholder, clear;
 		private bool wasOpen;
@@ -88,7 +94,9 @@ namespace BankInventoryMod
 
 		private void Styles()
 		{
-			if (field != null && field.normal.background != null) return;
+			bool paper = PaperLook;
+			if (field != null && field.normal.background != null && paper == paperBuilt) return;
+			paperBuilt = paper;
 			field = new GUIStyle(GUI.skin.textField) { fontSize = 15, padding = new RectOffset(10, 30, 6, 6), border = new RectOffset(2, 2, 2, 2) };
 			field.normal.background = field.hover.background = Tex(new Color(0.1f, 0.09f, 0.08f, 0.92f), new Color(0.55f, 0.42f, 0.17f));
 			field.focused.background = Tex(new Color(0.13f, 0.11f, 0.09f, 0.96f), new Color(0.95f, 0.75f, 0.35f));
@@ -99,6 +107,15 @@ namespace BankInventoryMod
 			placeholder.fontStyle = FontStyle.Italic;
 			clear = new GUIStyle(GUI.skin.label) { fontSize = 15, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleCenter };
 			clear.normal.textColor = clear.hover.textColor = new Color(0.79f, 0.6f, 0.23f);
+			if (paper)
+			{
+				// a receipt-white slip with ink text
+				field.normal.background = field.hover.background = Tex(new Color32(241, 238, 230, 245), new Color32(84, 72, 52, 255));
+				field.focused.background = Tex(new Color32(250, 248, 242, 250), new Color32(122, 43, 28, 255));
+				field.normal.textColor = field.hover.textColor = field.focused.textColor = new Color32(43, 36, 24, 255);
+				placeholder.normal.textColor = new Color32(120, 108, 86, 255);
+				clear.normal.textColor = clear.hover.textColor = new Color32(122, 43, 28, 255);
+			}
 		}
 
 		private void OnGUI()

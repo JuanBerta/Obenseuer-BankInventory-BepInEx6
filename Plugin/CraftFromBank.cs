@@ -445,6 +445,7 @@ namespace BankInventoryMod
 	internal class CraftFromBankUI : MonoBehaviour
 	{
 		private GUIStyle style, hint, box;
+		private bool paperBuilt;
 		private float nextCheck;
 		private string takeLabel, returnLabel;
 		private bool takeUsable, returnUsable;
@@ -512,7 +513,9 @@ namespace BankInventoryMod
 
 		private void Styles()
 		{
-			if (style != null && style.normal.background != null) return;
+			bool paper = BankSearch.PaperLook;
+			if (style != null && style.normal.background != null && paper == paperBuilt) return;
+			paperBuilt = paper;
 			style = new GUIStyle(GUI.skin.button) { fontSize = 14, fontStyle = FontStyle.Bold, padding = new RectOffset(12, 12, 7, 7), border = new RectOffset(2, 2, 2, 2) };
 			style.normal.background = Tex(new Color(0.42f, 0.29f, 0.08f, 0.95f), new Color(0.79f, 0.6f, 0.23f));
 			style.hover.background = Tex(new Color(0.6f, 0.42f, 0.12f, 0.95f), new Color(0.95f, 0.75f, 0.35f));
@@ -524,6 +527,18 @@ namespace BankInventoryMod
 			hint.normal.textColor = hint.hover.textColor = hint.active.textColor = new Color(0.66f, 0.62f, 0.53f);
 			box = new GUIStyle(hint) { alignment = TextAnchor.MiddleCenter };
 			box.normal.textColor = box.hover.textColor = box.active.textColor = new Color(0.98f, 0.93f, 0.8f);
+			if (paper)
+			{
+				// cardboard buttons with cream text; greyed hints and the amount on manila paper with ink
+				style.normal.background = Tex(new Color32(92, 70, 44, 245), new Color32(66, 50, 32, 255));
+				style.hover.background = Tex(new Color32(120, 92, 58, 245), new Color32(201, 160, 72, 255));
+				style.active.background = Tex(new Color32(201, 160, 72, 245), new Color32(122, 92, 40, 255));
+				style.normal.textColor = style.hover.textColor = new Color32(240, 228, 205, 255);
+				hint.normal.background = hint.hover.background = hint.active.background = Tex(new Color32(214, 196, 152, 235), new Color32(150, 132, 96, 255));
+				hint.normal.textColor = hint.hover.textColor = hint.active.textColor = new Color32(110, 96, 72, 255);
+				box.normal.background = box.hover.background = box.active.background = Tex(new Color32(232, 220, 188, 245), new Color32(150, 132, 96, 255));
+				box.normal.textColor = box.hover.textColor = box.active.textColor = new Color32(43, 36, 24, 255);
+			}
 		}
 
 		private bool Btn(ref float x, float y, string text, bool usable, GUIStyle forced = null)
