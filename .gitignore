@@ -10,3 +10,4 @@ obj/
 # Rider/VS Code
 .idea/
 .vscode/
+release/stage/
