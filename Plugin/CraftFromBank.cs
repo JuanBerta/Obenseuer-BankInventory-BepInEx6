@@ -37,8 +37,29 @@ namespace BankInventoryMod
 
 		// ---- What the player is looking at ----
 
-		internal static Recipe ShownRecipe;
+		private static Recipe lastRecipe;
+		private static CraftingBase lastStation;
 		internal static int ShownMultiplier = 1;
+		private static RecipeInfoUI recipePanel;
+
+		// The recipe to fill for: the one the info panel shows, or else the last one you hovered or
+		// picked at this same station (some stations only show the panel while you hover a recipe).
+		internal static Recipe ShownRecipe
+		{
+			get
+			{
+				try
+				{
+					CraftingBase cur = CraftingBase.currentCraftingBase;
+					if (cur == null || cur != lastStation) return null;
+					if (recipePanel != null && recipePanel.gameObject.activeInHierarchy && recipePanel.CurrentRecipe() != null)
+						return recipePanel.CurrentRecipe();
+					return lastRecipe;
+				}
+				catch (Exception) { return null; }
+			}
+		}
+
 		internal static BuildingSystem.FurnitureInfo ShownFurniture;
 		private static Recipe autoRecipe;
 		private static int autoMultiplier;
@@ -106,7 +127,9 @@ namespace BankInventoryMod
 		{
 			var moves = new List<Move>();
 			stillMissing = 0; missingBefore = 0;
-			if (station == null || recipe == null || recipe.Input == null) return moves;
+			if (station == null || recipe == null) return moves;
+			if (recipe.Input == null) recipe.SetItems();
+			if (recipe.Input == null) return moves;
 			Recipe.RecipeRequirementData[] reqs = CraftingBaseHelperFunctions.CreateRequirements(recipe, true);
 			int mult = Mathf.Max(1, multiplier);
 			foreach (var r in reqs) r.requiredAmount *= mult;
@@ -273,9 +296,12 @@ namespace BankInventoryMod
 		{
 			[HarmonyPatch(typeof(RecipeInfoUI), "ShowRecipe", new Type[] { typeof(Recipe), typeof(int), typeof(float), typeof(float), typeof(bool), typeof(bool) })]
 			[HarmonyPostfix]
-			private static void ShowRecipe_Postfix(Recipe recipe, int multiplier)
+			private static void ShowRecipe_Postfix(RecipeInfoUI __instance, Recipe recipe, int multiplier)
 			{
-				ShownRecipe = recipe;
+				if (recipe == null || CraftingBase.currentCraftingBase == null) return;
+				recipePanel = __instance;
+				lastRecipe = recipe;
+				lastStation = CraftingBase.currentCraftingBase;
 				ShownMultiplier = Mathf.Max(1, multiplier);
 				if (Enabled.Value && AutoFill.Value && recipe != null && CraftingBase.currentCraftingBase != null && (recipe != autoRecipe || ShownMultiplier != autoMultiplier))
 				{
@@ -327,7 +353,8 @@ namespace BankInventoryMod
 					kind = 1;
 					var plan = CraftFromBank.PlanStation(st, CraftFromBank.ShownRecipe, CraftFromBank.ShownMultiplier, out still, out before);
 					usable = plan.Count > 0;
-					label = before == 0 ? "Station has all ingredients" : usable ? "Take ingredients from bank (" + plan.Count + ")" : "Bank has none of the missing ingredients";
+					string name = CraftFromBank.ShownRecipe.Name;
+					label = before == 0 ? name + ": station has all ingredients" : usable ? "Take ingredients for " + name + " from bank (" + plan.Count + ")" : name + ": bank has none of the missing ingredients";
 				}
 				else if (CraftFromBank.WorkbenchOpen && CraftFromBank.ShownBlueprint != null)
 				{

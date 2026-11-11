@@ -11,7 +11,7 @@ AIGC:
 
 # Obenseuer-BankInventory (BepInEx 6)
 
-**Version 1.2.1** (BepInEx 6 edition)
+**Version 1.2.2** (BepInEx 6 edition)
 
 ## Installation (BepInEx 6)
 
