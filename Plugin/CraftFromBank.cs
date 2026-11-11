@@ -151,9 +151,12 @@ namespace BankInventoryMod
 					if (left <= 0) continue;
 					var test = Copy(r);
 					float before = test.requiredAmount;
-					test.requiredAmount = 1e9f;   // how much the whole stack could give
+					// How much the whole stack could give. Kept small enough for float precision
+					// (1e9 - 1 is still 1e9 as a float, which made every stack look useless).
+					const float probe = 100000f;
+					test.requiredAmount = probe;
 					test = CraftingBaseHelperFunctions.ProcessRequirementWithItemStack(test, sc.itemStack, recipe);
-					float give = 1e9f - test.requiredAmount;
+					float give = probe - test.requiredAmount;
 					if (give <= 0.0001f) continue;
 					float per = give / sc.itemStack.itemAmount;
 					int k = Mathf.Min(left, Mathf.CeilToInt(before / per - 0.0001f));
