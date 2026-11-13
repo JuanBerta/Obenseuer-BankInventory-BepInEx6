@@ -2,10 +2,13 @@
 A bank you can open anywhere with infinite, multi-page, searchable storage. Take crafting ingredients for as many crafts as you want straight from the bank and send leftovers back, and pay tenement upgrades with bank materials.
 
 === FILE DESCRIPTIONS ===
-Obenseuer-BankInventory-BepInEx6-v1.6.0.rar : Bank Inventory 1.6.0 for BepInEx 6. Extract into the Obenseuer folder.
-Obenseuer-BankInventory-BepInEx5-v1.6.0.rar : Bank Inventory 1.6.0 for BepInEx 5. Extract into the Obenseuer folder.
+Obenseuer-BankInventory-BepInEx6-v1.6.1.rar : Bank Inventory 1.6.1 for BepInEx 6. Extract into the Obenseuer folder.
 
-$11.6.0
+=== CHANGELOG (Nexus "Changelogs" tab) ===
+1.6.1
+- Type the amount: click the amount box (x1) on the crafting bar, type a number and press Enter (or click elsewhere); Esc cancels. Game keys are ignored while you type.
+- The amount is checked: more than your ingredients allow is set to the most you can make; 0, negative numbers and text keep the old amount; the most is 999. A short note under the box says what happened.
+1.6.0
 - New: search any storage (backpack, crates, fridges...). Matching slots are outlined and the rest dimmed; the bank still filters across all its pages.
 1.5.0
 - New: search the bank. A search box at the top of the screen filters the bank to matching stacks from every page (item name, liquid inside, or category). Hotkeys are muted while typing; Esc clears it.
@@ -62,7 +65,7 @@ $11.6.0
 
 [size=4][b]Installation[/b][/size]
 [list=1]
-[*]Install [b]BepInEx 6[/b] or [b]BepInEx 5[/b] (x64) and download the matching file.
+[*]Install [b]BepInEx 6[/b] (be.697 or newer, x64). New versions are BepInEx 6 only; the last BepInEx 5 version (1.6.0) stays in the archived files.
 [*]Extract the archive into your Obenseuer folder (where Obenseuer.exe is).
 [*]Start the game and press O.
 [/list]
@@ -71,4 +74,4 @@ Updating: replace the DLL. Your bank contents are kept.
 [size=4][b]Credits[/b][/size]
 Stacking inspired by LOMS' [url=https://github.com/LOMS/obenseuer-inventory-tweaks]Inventory Tweaks[/url].
 
-[url=https://github.com/JuanBerta/Obenseuer-BankInventory-BepInEx6]Source (BepInEx 6)[/url] | [url=https://github.com/JuanBerta/Obenseuer-BankInventory]Source (BepInEx 5)[/url]
+[url=https://github.com/JuanBerta/Obenseuer-BankInventory-BepInEx6]Source[/url]

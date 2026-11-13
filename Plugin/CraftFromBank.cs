@@ -453,6 +453,16 @@ namespace BankInventoryMod
 		private int max;
 		private object lastTarget;
 
+		// Typing an amount: click the "x24" box, type, Enter (or click away) to set it, Esc to cancel.
+		private const string AmountControl = "BankInventoryCraftAmount";
+		internal static bool EditingAmount;
+		private bool editing, focusPending;
+		private string typed = "";
+		private string amountNote;
+		private float amountNoteUntil;
+		private bool amountNoteBad;
+		private GUIStyle field, note;
+
 		private static Texture2D Tex(Color fill, Color edge)
 		{
 			var t = new Texture2D(8, 8) { hideFlags = HideFlags.HideAndDontSave };
@@ -481,7 +491,7 @@ namespace BankInventoryMod
 				{
 					kind = 1;
 					Recipe r = CraftFromBank.ShownRecipe;
-					if (!ReferenceEquals(r, lastTarget)) { lastTarget = r; CraftFromBank.Amount = 1; }
+					if (!ReferenceEquals(r, lastTarget)) { lastTarget = r; CraftFromBank.Amount = 1; editing = false; EditingAmount = false; }
 					max = CraftFromBank.MaxStation(st, r);
 					int n = CraftFromBank.Amount;
 					var plan = CraftFromBank.PlanStation(st, r, n, out still, out before);
@@ -496,7 +506,7 @@ namespace BankInventoryMod
 				{
 					kind = 2;
 					TaskItemBlueprint bp = CraftFromBank.ShownBlueprint;
-					if (!ReferenceEquals(bp, lastTarget)) { lastTarget = bp; CraftFromBank.Amount = 1; }
+					if (!ReferenceEquals(bp, lastTarget)) { lastTarget = bp; CraftFromBank.Amount = 1; editing = false; EditingAmount = false; }
 					max = CraftFromBank.MaxBlueprint(bp);
 					int n = CraftFromBank.Amount;
 					var plan = CraftFromBank.PlanBlueprint(bp, n, out still, out before);
@@ -526,6 +536,7 @@ namespace BankInventoryMod
 			hint.normal.background = hint.hover.background = hint.active.background = Tex(new Color(0.1f, 0.09f, 0.08f, 0.85f), new Color(0.35f, 0.32f, 0.27f));
 			hint.normal.textColor = hint.hover.textColor = hint.active.textColor = new Color(0.66f, 0.62f, 0.53f);
 			box = new GUIStyle(hint) { alignment = TextAnchor.MiddleCenter };
+			box.hover.background = Tex(new Color(0.16f, 0.14f, 0.12f, 0.9f), new Color(0.79f, 0.6f, 0.23f));
 			box.normal.textColor = box.hover.textColor = box.active.textColor = new Color(0.98f, 0.93f, 0.8f);
 			if (paper)
 			{
@@ -538,7 +549,13 @@ namespace BankInventoryMod
 				hint.normal.textColor = hint.hover.textColor = hint.active.textColor = new Color32(110, 96, 72, 255);
 				box.normal.background = box.hover.background = box.active.background = Tex(new Color32(232, 220, 188, 245), new Color32(150, 132, 96, 255));
 				box.normal.textColor = box.hover.textColor = box.active.textColor = new Color32(43, 36, 24, 255);
+				box.hover.background = Tex(new Color32(240, 230, 200, 245), new Color32(201, 160, 72, 255));
 			}
+			field = new GUIStyle(box);
+			field.focused.background = field.normal.background = box.hover.background;
+			field.focused.textColor = field.normal.textColor = box.normal.textColor;
+			note = new GUIStyle(GUI.skin.label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, padding = new RectOffset(10, 10, 5, 5), wordWrap = false, clipping = TextClipping.Overflow, border = new RectOffset(2, 2, 2, 2) };
+			note.normal.background = Tex(paper ? (Color)new Color32(232, 220, 188, 245) : new Color(0.1f, 0.09f, 0.08f, 0.92f), paper ? (Color)new Color32(150, 132, 96, 255) : new Color(0.35f, 0.32f, 0.27f));
 		}
 
 		private bool Btn(ref float x, float y, string text, bool usable, GUIStyle forced = null)
@@ -554,7 +571,7 @@ namespace BankInventoryMod
 
 		private void OnGUI()
 		{
-			if (kind == 0 || takeLabel == null || !Cursor.visible) return;
+			if (kind == 0 || takeLabel == null || !Cursor.visible) { StopEditing(); return; }
 			Styles();
 			int n = CraftFromBank.Amount;
 			string amountText = "x" + n;
@@ -564,9 +581,11 @@ namespace BankInventoryMod
 			float x = Mathf.Max(8f, (Screen.width - total) / 2f), y = 12f;
 			int step = Event.current.shift ? 10 : 1;
 			bool changed = false;
-			if (Btn(ref x, y, "-", n > 1)) { CraftFromBank.Amount = Mathf.Max(1, n - step); changed = true; }
+			if (Btn(ref x, y, "-", n > 1)) { CraftFromBank.Amount = Mathf.Max(1, n - step); changed = true; StopEditing(); }
 			Vector2 asz = box.CalcSize(new GUIContent("x999"));
-			GUI.Label(new Rect(x, y, asz.x, asz.y), amountText, box); x += asz.x + 6f;
+			Rect amountRect = new Rect(x, y, asz.x, asz.y);
+			if (AmountBox(amountRect, amountText)) changed = true;
+			x += asz.x + 6f;
 			if (Btn(ref x, y, "+", n < CraftFromBank.MaxAmount)) { CraftFromBank.Amount = Mathf.Min(CraftFromBank.MaxAmount, n + step); changed = true; }
 			if (Btn(ref x, y, maxText, max > 0 && max != n)) { CraftFromBank.Amount = max; changed = true; }
 			bool take = Btn(ref x, y, takeLabel, takeUsable);
@@ -585,7 +604,82 @@ namespace BankInventoryMod
 				catch (Exception e) { CraftFromBank.Notify("Couldn't move the items: " + e.Message); }
 				changed = true;
 			}
+			if (amountNote != null && Time.unscaledTime < amountNoteUntil)
+			{
+				Vector2 ns = note.CalcSize(new GUIContent(amountNote));
+				Color old = note.normal.textColor;
+				note.normal.textColor = amountNoteBad ? new Color(0.85f, 0.25f, 0.2f) : (BankSearch.PaperLook ? (Color)new Color32(43, 36, 24, 255) : new Color(0.98f, 0.93f, 0.8f));
+				GUI.Label(new Rect(Mathf.Max(8f, amountRect.x - 50f), amountRect.yMax + 6f, ns.x + 4f, Mathf.Max(ns.y, 28f)), amountNote, note);
+				note.normal.textColor = old;
+			}
 			if (changed) Recalc();
+		}
+
+		// The amount box: shows "x24"; click it to type a number.
+		private bool AmountBox(Rect r, string shown)
+		{
+			Event e = Event.current;
+			if (!editing)
+			{
+				if (GUI.Button(r, new GUIContent(shown, "Click to type an amount"), box))
+				{
+					editing = true; focusPending = true;
+					typed = CraftFromBank.Amount.ToString();
+				}
+				EditingAmount = false;
+				return false;
+			}
+			bool focused = GUI.GetNameOfFocusedControl() == AmountControl;
+			bool commit = false, cancel = false;
+			if (e.type == EventType.KeyDown && (focused || focusPending))
+			{
+				if (e.keyCode == KeyCode.Return || e.keyCode == KeyCode.KeypadEnter) { commit = true; e.Use(); }
+				else if (e.keyCode == KeyCode.Escape) { cancel = true; e.Use(); }
+			}
+			if (e.type == EventType.MouseDown && !r.Contains(e.mousePosition)) commit = true;
+			if (!commit && !cancel)
+			{
+				GUI.SetNextControlName(AmountControl);
+				typed = GUI.TextField(r, typed ?? "", 6, field);
+				if (focusPending) { GUI.FocusControl(AmountControl); focusPending = false; }
+				EditingAmount = true;
+				return false;
+			}
+			StopEditing();
+			return !cancel && Apply(typed);
+		}
+
+		private void StopEditing()
+		{
+			if (editing && GUI.GetNameOfFocusedControl() == AmountControl) GUI.FocusControl(null);
+			editing = false; focusPending = false; EditingAmount = false;
+		}
+
+		// Checks the typed amount and sets it. Returns true when the amount changed.
+		private bool Apply(string text)
+		{
+			string t = (text ?? "").Trim().TrimStart('x', 'X').Trim();
+			int v;
+			if (t.Length == 0) return false;
+			if (!int.TryParse(t, out v)) { Note("\"" + t + "\" isn't a number. Type a whole number, like 10.", true); return false; }
+			if (v < 1) { Note("The amount must be at least 1.", true); return false; }
+			int cap = CraftFromBank.MaxAmount;
+			if (v > cap) { Note("The most is " + cap + ". Set to " + cap + ".", true); v = cap; }
+			if (max > 0 && v > max)
+			{
+				Note("You only have enough for " + max + ". Set to " + max + ".", true);
+				v = max;
+			}
+			else if (max == 0 && v > 1)
+				Note("Not enough for even one yet: the bank and you are missing ingredients.", true);
+			bool changed = v != CraftFromBank.Amount;
+			CraftFromBank.Amount = v;
+			return changed;
+		}
+
+		private void Note(string text, bool bad)
+		{
+			amountNote = text; amountNoteBad = bad; amountNoteUntil = Time.unscaledTime + 4f;
 		}
 	}
 

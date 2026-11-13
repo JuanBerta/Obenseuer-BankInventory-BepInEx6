@@ -1,6 +1,11 @@
 Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.6.1 (2026-11-13)
+--------------------
+- Type the amount: click the amount box on the crafting bar at stations and workbenches, type a number, Enter or click away to set it, Esc to cancel. Game keys are muted while typing.
+- Checks: capped at what your ingredients allow and at 999; 0, negative numbers and text keep the previous amount, with a short note under the box.
+
 v1.6.0 (2026-11-11)
 --------------------
 - Search any storage: the backpack, crates, fridges and other containers get the same search box as the bank. Matching slots are outlined, the rest dimmed, with a found count (display only, nothing moves). It clears when you open another storage.

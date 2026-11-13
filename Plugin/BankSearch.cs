@@ -262,7 +262,7 @@ namespace BankInventoryMod
 
 		private static bool BoolPrefix(ref bool __result)
 		{
-			if (!BankSearch.Typing) return true;
+			if (!BankSearch.Typing && !CraftFromBankUI.EditingAmount) return true;
 			__result = false;
 			return false;
 		}
