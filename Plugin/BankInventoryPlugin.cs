@@ -120,6 +120,10 @@ namespace BankInventoryMod
 		{
 			EnsureBankExists();
 
+			// Freezer: keep every stored stack in freezer state (food doesn't spoil).
+			if (bank != null)
+				bank.EnforceFreezer();
+
 			if (Inventory.instance == null || GameUIController.instance == null)
 				return;
 

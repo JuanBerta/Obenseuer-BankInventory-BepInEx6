@@ -43,6 +43,24 @@ namespace BankInventoryMod
 		/// <summary>Create the bank object. The object is inactive until the plugin activates
 		/// it once the game world (Inventory.instance) is available, so the game's Storage.Start()
 		/// can safely initialize.</summary>
+		/// <summary>Freezer sweep: every stack in the bank gets the spoil-disabled flag and the
+		/// freezer value. Items moved in from the backpack keep their own flags, so this runs every
+		/// frame (cheap: one bool and one float per slot) rather than only when the game refreshes the storage.</summary>
+		public void EnforceFreezer()
+		{
+			if (storageSlots == null)
+				return;
+			disableSpoil = true;
+			for (int i = 0; i < storageSlots.Length; i++)
+			{
+				StorageSlot slot = storageSlots[i];
+				if (slot == null)
+					continue;
+				slot.spoilDisabled = true;
+				slot.refigerated = 1f;
+			}
+		}
+
 		public static BankStorage Create(int baseCapacity, int pageSize)
 		{
 			GameObject go = new GameObject("BankInventory_Storage");
