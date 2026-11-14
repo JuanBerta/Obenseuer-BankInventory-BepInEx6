@@ -65,8 +65,13 @@ namespace BankInventoryMod
 
 		private static BankInventoryPlugin Plugin { get { return BankInventoryPlugin.Instance; } }
 
+		private float nextDetect;
+
 		private void Update()
 		{
+			// looking for an open storage a few times a second is plenty (it reads the game's panel by reflection)
+			if (Time.unscaledTime < nextDetect) return;
+			nextDetect = Time.unscaledTime + 0.1f;
 			bool bank = Plugin != null && Plugin.BankOpen && Cursor.visible;
 			bool storage = !bank && Cursor.visible && StorageShowing();
 			bool open = bank || storage;

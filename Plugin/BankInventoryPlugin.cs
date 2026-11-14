@@ -10,7 +10,7 @@ using OS.Items;
 
 namespace BankInventoryMod
 {
-	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.6.1")]
+	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.7.0")]
 	public class BankInventoryPlugin : BaseUnityPlugin
 	{
 		private BankStorage bank;
@@ -76,6 +76,8 @@ namespace BankInventoryMod
 				//    stays active once the world loads).
 				harmony.Patch(AccessTools.Method(typeof(SaveController), "ExecuteDontDestroyOnLoadSaveLoadFunctions"),
 					prefix: new HarmonyMethod(typeof(BankPatches), nameof(BankPatches.DontDestroyOnLoadHooksPrefix)));
+				// 4) The bank is a freezer: stored food doesn't spoil.
+				BankFreezer.Patch(harmony);
 			}
 			catch (System.Exception e)
 			{
@@ -148,6 +150,9 @@ namespace BankInventoryMod
 			// Infinite storage: if every slot is occupied, grow by one page immediately.
 			// This also guarantees the player can never "drop" items on the floor when
 			// dragging them into a full bank (there is always at least one free slot).
+			if (Time.unscaledTime >= nextFullCheck)
+			{
+			nextFullCheck = Time.unscaledTime + 0.2f;
 			if (bank.IsStorageFull())
 			{
 				bank.ExpandByPage(pageSize.Value);
@@ -166,6 +171,7 @@ namespace BankInventoryMod
 				bank.CurrentPage = bank.TotalPages - 1;
 				ApplyPageVisibility();
 				UpdateTitle();
+			}
 			}
 
 			// If the game closed the storage panel by itself (Esc, another UI flow...),
@@ -268,6 +274,23 @@ namespace BankInventoryMod
 		}
 
 		/// <summary>Instantiate a slot UI for every slot that does not have one yet.</summary>
+		// The game builds one slot UI per slot (88 per page). They are kept between openings, parked in a
+		// hidden holder while the bank is closed, so opening the bank doesn't rebuild every page's slots.
+		private float nextFullCheck;
+		private static Transform slotHolder;
+
+		private static Transform SlotHolder()
+		{
+			if (slotHolder == null)
+			{
+				var go = new GameObject("BankInventory_SlotHolder");
+				go.SetActive(false);
+				Object.DontDestroyOnLoad(go);
+				slotHolder = go.transform;
+			}
+			return slotHolder;
+		}
+
 		private void BindAllSlots()
 		{
 			if (Inventory.instance == null || Inventory.instance.storagePanelUI == null)
@@ -277,11 +300,18 @@ namespace BankInventoryMod
 			for (int i = 0; i < bank.Slots.Length; i++)
 			{
 				SlotController sc = bank.Slots[i];
+				sc.SetAllowedCategories(bank.AllowedCategories);
+				sc.SetForbiddenCategories(bank.ForbiddenCategories);
 				if (sc.slot == null)
 				{
-					sc.SetAllowedCategories(bank.AllowedCategories);
-					sc.SetForbiddenCategories(bank.ForbiddenCategories);
 					sc.CaptureSlot(panel);
+				}
+				else
+				{
+					// a slot UI kept from the last opening: back into the panel
+					sc.slot.transform.SetParent(panel, false);
+					sc.slot.gameObject.SetActive(true);
+					sc.slot.SetSlotController(sc);
 				}
 
 				// The bank slot UI is instantiated from the player inventory prefab,
@@ -342,19 +372,20 @@ namespace BankInventoryMod
 			if (bank == null)
 				return;
 
+			Transform holder = SlotHolder();
 			for (int i = 0; i < bank.Slots.Length; i++)
 			{
 				SlotController sc = bank.Slots[i];
-				if (sc != null)
+				if (sc == null)
+					continue;
+				if (sc.slot != null)
 				{
-					if (sc.slot != null)
-					{
-						sc.RelaseSlot(destroy: true);
-						sc.slot = null; // clear so a later CaptureSlot re-instantiates a fresh UI
-					}
-					sc.ResetAllowedCategories();
-					sc.ResetForbiddenCategories();
+					sc.RelaseSlot(destroy: false);
+					sc.slot.gameObject.SetActive(false);
+					sc.slot.transform.SetParent(holder, false);
 				}
+				sc.ResetAllowedCategories();
+				sc.ResetForbiddenCategories();
 			}
 		}
 

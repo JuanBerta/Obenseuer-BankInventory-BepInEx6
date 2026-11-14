@@ -56,6 +56,8 @@ namespace BankInventoryMod
 		{
 			GUID = BankGUID;
 			global = true; // persist into Globals.tnmt (global save), independent of level
+			// Freezer: items in the bank never spoil (the game's own spoil-disable switch).
+			disableSpoil = true;
 			title = "Bank Inventory";
 			PageSize = Mathf.Max(1, pageSize);
 			int cap = Mathf.Max(1, baseCapacity);
@@ -171,6 +173,38 @@ namespace BankInventoryMod
 		public int GetPageEnd(int page)
 		{
 			return Mathf.Min((page + 1) * PageSize, Slots.Length);
+		}
+	}
+}
+
+namespace BankInventoryMod
+{
+	/// <summary>
+	/// Makes the bank a freezer. The game refreshes every slot's refrigeration state through
+	/// Storage.UpdateRefigeration(float) (on load, on power changes and when slots are rebuilt).
+	/// For the bank we force the freezer value (1 or more) and the spoil-disabled flag on every
+	/// refresh, so stored food keeps its freshness.
+	/// </summary>
+	internal static class BankFreezer
+	{
+		internal static void Patch(HarmonyLib.Harmony harmony)
+		{
+			var method = HarmonyLib.AccessTools.Method(typeof(Storage), "UpdateRefigeration", new[] { typeof(float) });
+			if (method == null)
+			{
+				UnityEngine.Debug.LogWarning("[BankInventory] Freezer: Storage.UpdateRefigeration not found, bank will spoil food as usual.");
+				return;
+			}
+			harmony.Patch(method, prefix: new HarmonyLib.HarmonyMethod(typeof(BankFreezer), nameof(Prefix)));
+		}
+
+		private static void Prefix(Storage __instance, ref float refig)
+		{
+			BankStorage bank = __instance as BankStorage;
+			if (bank == null)
+				return;
+			bank.disableSpoil = true;
+			refig = 1f; // Freezer
 		}
 	}
 }

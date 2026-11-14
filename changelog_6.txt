@@ -1,6 +1,10 @@
 Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.7.0
+--------------------
+- Freezer: the bank keeps food fresh. Everything stored in the bank no longer spoils (it is always treated as frozen).
+
 v1.6.1 (2026-11-13)
 --------------------
 - Type the amount: click the amount box on the crafting bar at stations and workbenches, type a number, Enter or click away to set it, Esc to cancel. Game keys are muted while typing.
