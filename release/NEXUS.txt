@@ -2,9 +2,20 @@
 A bank you can open anywhere with infinite, multi-page, searchable storage. Take crafting ingredients for as many crafts as you want straight from the bank and send leftovers back, and pay tenement upgrades with bank materials.
 
 === FILE DESCRIPTIONS ===
-Obenseuer-BankInventory-BepInEx6-v1.6.1.rar : Bank Inventory 1.6.1 for BepInEx 6. Extract into the Obenseuer folder.
+Obenseuer-BankInventory-BepInEx6-v1.7.7.rar : Bank Inventory 1.7.7 for BepInEx 6. Extract into the Obenseuer folder (replaces the old DLL).
 
 === CHANGELOG (Nexus "Changelogs" tab) ===
+1.7.7
+- Fixed: the bank made the game slower the longer you played, mainly while a liquid station was open. The fill check no longer runs its full calculation every frame, and the temporary diagnostic logging is removed.
+1.7.6
+- Fixed: Fill on a liquid station (barrel, fermenter) now moves a suitable container from your inventory or the bank into the station before it fills. Fill is enabled when the bank has one.
+- The container used is the largest one that fits (most litres first). "Take ingredients for" brings the same container.
+- Fixed: a NullReferenceException when hovering some owned items in the bank tooltip.
+- Items in the bank that you can't use (a mash, say) no longer keep their owner tag, which caused wrong icons in the bank.
+1.7.0
+- Freezer: everything stored in the bank no longer spoils. Items moved in from your backpack are frozen too, and the freezer state is kept on every stack.
+1.6.2
+- Fixed: the bank was slow to open and to change page once it had many pages (11 here). The slots are reused instead of rebuilt each time.
 1.6.1
 - Type the amount: click the amount box (x1) on the crafting bar, type a number and press Enter (or click elsewhere); Esc cancels. Game keys are ignored while you type.
 - The amount is checked: more than your ingredients allow is set to the most you can make; 0, negative numbers and text keep the old amount; the most is 999. A short note under the box says what happened.

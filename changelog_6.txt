@@ -1,6 +1,16 @@
 Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.7.7
+--------------------
+- Fixed: slowdown that grew the longer the game was played, mainly while a liquid station was open. The fill check is cached for a short time and the temporary diagnostic logging is removed.
+
+v1.7.6
+--------------------
+- Fill on a liquid station (barrel, fermenter): the needed container (largest that fits) moves in from the inventory or bank before filling. "Take ingredients for" brings it too.
+- Fixed: NullReferenceException hovering some owned items in the bank tooltip.
+- Items you can't use (e.g. a mash) no longer keep their owner tag, which caused wrong icons in the bank.
+
 v1.7.0
 --------------------
 - Freezer: the bank keeps food fresh. Everything stored in the bank no longer spoils (it is always treated as frozen).

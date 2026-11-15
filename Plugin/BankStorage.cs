@@ -152,6 +152,22 @@ namespace BankInventoryMod
 					sc.itemStack.SetItemReference();
 				Slots[i] = sc;
 			}
+			ClearNotUsableOwners();
+		}
+
+		/// <summary>Player choice: items in the bank that are "not usable" because they carry an owner
+		/// lose that owner, so they become usable (e.g. turnip mash made in a barrel).</summary>
+		public void ClearNotUsableOwners()
+		{
+			if (storageSlots == null) return;
+			foreach (ItemStack st in storageSlots)
+			{
+				if (st == null || st.itemId < 0 || st.ownerId <= 0) continue;
+				ItemOwnerPermission perm = st.GetMetaOfType<ItemOwnerPermission>();
+				if (perm == null || perm.allowUse) continue;
+				st.ownerId = 0;
+				perm.allowUse = true;
+			}
 		}
 
 		/// <summary>Expand the storage by one page. Existing SlotController instances are kept

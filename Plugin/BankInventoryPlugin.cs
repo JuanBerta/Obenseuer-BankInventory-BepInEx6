@@ -10,7 +10,7 @@ using OS.Items;
 
 namespace BankInventoryMod
 {
-	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.7.0")]
+	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.7.7")]
 	public class BankInventoryPlugin : BaseUnityPlugin
 	{
 		private BankStorage bank;
@@ -78,6 +78,12 @@ namespace BankInventoryMod
 					prefix: new HarmonyMethod(typeof(BankPatches), nameof(BankPatches.DontDestroyOnLoadHooksPrefix)));
 				// 4) The bank is a freezer: stored food doesn't spoil.
 				BankFreezer.Patch(harmony);
+				// 5) Tooltip guard: the game's ToolTip.ValueToString crashes for items marked
+				//    not-usable that carry an owner whose shop isn't loaded, which leaves the
+				//    info panel half-updated (stale icon, wrong item shown).
+				TooltipGuard.Patch(harmony);
+				// 6) Auto-fill: Fill on a liquid station brings the needed containers from inventory and bank.
+				ManufacturingAutoFill.Patch(harmony);
 			}
 			catch (System.Exception e)
 			{

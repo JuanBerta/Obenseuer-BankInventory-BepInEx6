@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
@@ -20,6 +21,7 @@ namespace BankInventoryMod
 		internal static ConfigEntry<bool> AutoFill;
 		internal static ConfigEntry<bool> UseStolen;
 		private static ManualLogSource log;
+		internal static ManualLogSource DiagLog { get { return log; } }
 
 		internal static void Init(ConfigFile cfg, ManualLogSource logger, GameObject host)
 		{
@@ -125,13 +127,22 @@ namespace BankInventoryMod
 		}
 
 		// What to move from the bank so the station has everything; missing = requirements the bank can't cover.
-		internal static List<Move> PlanStation(CraftingBase station, Recipe recipe, int multiplier, out int stillMissing, out int missingBefore)
+		internal static List<Move> PlanStation(CraftingBase station, Recipe recipe, int multiplier, out int stillMissing, out int missingBefore, bool includeInventory = false)
 		{
 			var moves = new List<Move>();
 			stillMissing = 0; missingBefore = 0;
 			if (station == null || recipe == null) return moves;
 			if (recipe.Input == null) recipe.SetItems();
 			if (recipe.Input == null) return moves;
+			// Liquid fill recipes (the game's synthetic "fill the container" recipe) have no inputs; the
+			// requirement is a usable liquid container, matched the same way the game checks it.
+			bool noInputs = true;
+			foreach (var _in in recipe.Input) { noInputs = false; break; }
+			if (noInputs && recipe.variantItemCategory == VariantCategory.LiquidContainer)
+			{
+				PlanFillContainer(station, recipe, includeInventory, moves, out stillMissing, out missingBefore);
+				return moves;
+			}
 			Recipe.RecipeRequirementData[] reqs = CraftingBaseHelperFunctions.CreateRequirements(recipe, true);
 			// Tools (utility items, tableware...) are needed once, not once per craft: the game marks them
 			// with amount 0 when it asks for "non-executable" requirements.
@@ -149,7 +160,7 @@ namespace BankInventoryMod
 			{
 				if (r.requiredAmount <= 0.0001f) continue;
 				missingBefore++;
-				foreach (SlotController sc in BankSlots())
+				foreach (SlotController sc in (includeInventory ? InventoryAndBank() : BankSlots()))
 				{
 					if (r.requiredAmount <= 0.0001f) break;
 					int taken; used.TryGetValue(sc, out taken);
@@ -177,10 +188,47 @@ namespace BankInventoryMod
 			return moves;
 		}
 
-		internal static string FillStation(CraftingBase station, Recipe recipe, int multiplier)
+		// A container the game accepts for filling: a Liquid Container holding this liquid (or empty), not full, with a size.
+		private static void PlanFillContainer(CraftingBase station, Recipe recipe, bool includeInventory, List<Move> moves, out int stillMissing, out int missingBefore)
+		{
+			stillMissing = 0; missingBefore = 0;
+			Item liquid = null;
+			foreach (KeyValuePair<Item, float> o in recipe.Output)
+				if (o.Key != null && o.Key.Categories != null && o.Key.Categories.Contains("Liquid")) { liquid = o.Key; break; }
+			if (liquid == null) return;
+			foreach (ItemStack st in station.InputSlots)
+				if (IsUsableFillContainer(st, liquid)) return;   // the station already has one
+			missingBefore = 1;
+			// Largest container first, so the biggest one that fits goes in.
+			SlotController best = null; float bestSize = -1f;
+			foreach (SlotController sc in (includeInventory ? InventoryAndBank() : BankSlots()))
+			{
+				if (!IsUsableFillContainer(sc.itemStack, liquid)) continue;
+				float size = ItemLiquidData.GetContainerSizeFromItem(sc.itemStack.Meta, liquid);
+				if (size > bestSize) { best = sc; bestSize = size; }
+			}
+			if (best != null) moves.Add(new Move { From = best, Amount = 1 });
+			else stillMissing = 1;
+		}
+
+		private static bool IsUsableFillContainer(ItemStack st, Item liquid)
+		{
+			if (st == null || st.itemId < 0 || st.itemAmount <= 0) return false;
+			if (st.itemReference == null || st.itemReference.Item == null) return false;
+			if (st.itemReference.Item.Categories == null || !st.itemReference.Item.Categories.Contains("Liquid Container")) return false;
+			ItemLiquidData liq = st.GetMetaOfType<ItemLiquidData>();
+			if (liq != null && liq.liquidItem != null)
+			{
+				if (liq.liquidItem.ID != liquid.ID || liq.IsMaxAmount(st.itemAmount)) return false;
+			}
+			float size = ItemLiquidData.GetContainerSizeFromItem(st.Meta, liquid);
+			return !float.IsNaN(size) && !float.IsInfinity(size) && size > 0.0001f;
+		}
+
+		internal static string FillStation(CraftingBase station, Recipe recipe, int multiplier, bool includeInventory = false)
 		{
 			int still, before;
-			List<Move> moves = PlanStation(station, recipe, multiplier, out still, out before);
+			List<Move> moves = PlanStation(station, recipe, multiplier, out still, out before, includeInventory);
 			if (before == 0) return "The station already has everything for this recipe.";
 			if (moves.Count == 0) return "The bank has none of the missing ingredients.";
 			Storage target = station.InputOutputStorage;
@@ -305,6 +353,7 @@ namespace BankInventoryMod
 				bank.ExpandByPage(Mathf.Max(1, bank.PageSize));
 				remaining = bank.AddItemAndReturnRemaining(item, remaining, owner, Item.CloneMeta(meta));
 			}
+			bank.ClearNotUsableOwners();
 			return amount - Mathf.Max(0, remaining);
 		}
 
@@ -371,6 +420,15 @@ namespace BankInventoryMod
 			}
 			try { Inventory.instance.UpdateAllSlots(); } catch (Exception) { }
 			return moved == 0 ? "You carry none of this blueprint's materials." : "Moved " + moved + " stack" + (moved > 1 ? "s" : "") + " of materials to the bank.";
+		}
+
+		// Inventory first (only items you may use), then the bank. Used by auto-fill.
+		private static IEnumerable<SlotController> InventoryAndBank()
+		{
+			if (Inventory.instance != null)
+				foreach (SlotController sc in Movable(Inventory.instance.Slots))
+					if (UseStolen.Value || sc.itemStack.ownerId <= 1) yield return sc;
+			foreach (SlotController sc in BankSlots()) yield return sc;
 		}
 
 		// ---- Helpers ----
