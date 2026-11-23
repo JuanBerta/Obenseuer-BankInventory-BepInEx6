@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using BepInEx;
 using BepInEx.Unity.Mono;
 using BepInEx.Unity.Mono.Configuration;
@@ -10,7 +10,7 @@ using OS.Items;
 
 namespace BankInventoryMod
 {
-	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.7.9")]
+	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.8.0")]
 	public class BankInventoryPlugin : BaseUnityPlugin
 	{
 		private BankStorage bank;

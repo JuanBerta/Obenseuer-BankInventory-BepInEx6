@@ -1,5 +1,9 @@
-Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
+﻿Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
+
+v1.8.0
+--------------------
+- New: in a crafting station's recipe list, recipe names are green when your inventory plus the bank has everything for one craft and red when something is missing (setting ColourRecipes).
 
 v1.7.9
 --------------------

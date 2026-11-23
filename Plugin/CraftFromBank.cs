@@ -20,6 +20,7 @@ namespace BankInventoryMod
 		internal static ConfigEntry<bool> Enabled;
 		internal static ConfigEntry<bool> AutoFill;
 		internal static ConfigEntry<bool> UseStolen;
+		internal static ConfigEntry<bool> ColourRecipes;
 		private static ManualLogSource log;
 		internal static ManualLogSource DiagLog { get { return log; } }
 
@@ -32,6 +33,8 @@ namespace BankInventoryMod
 				"Move the missing ingredients automatically whenever you pick a recipe (or change the amount) at a crafting station.");
 			UseStolen = cfg.Bind("Crafting", "UseStolenItems", false,
 				"Also use items in the bank that are owned by someone else (stolen).");
+			ColourRecipes = cfg.Bind("Crafting", "ColourRecipes", true,
+				"In a crafting station's recipe list, colour the name green when your inventory plus the bank (plus what is already in the station) has everything for one craft, and red when something is missing.");
 			try { new Harmony("com.juanberta.obenseuer.bankinventory.craft").PatchAll(typeof(CraftFromBank.Hooks)); }
 			catch (Exception e) { logger.LogWarning("Craft from bank patches: " + e.Message); }
 			host.AddComponent<CraftFromBankUI>();
@@ -514,6 +517,35 @@ namespace BankInventoryMod
 				}
 			}
 
+			private static System.Reflection.FieldInfo listButtons;
+			private static readonly Color Green = new Color(0.6f, 1f, 0.6f, 1f);
+			private static readonly Color Red = new Color(1f, 0.72f, 0.66f, 1f);
+
+			/// <summary>Colours each recipe name in the station's list: green = inventory + bank cover one craft, red = something is missing.</summary>
+			[HarmonyPatch(typeof(RecipeListUI), "CreateButton")]
+			[HarmonyPostfix]
+			private static void CreateButton_Postfix(RecipeListUI __instance, Recipe recipe, CraftingBase activeCraftingBase, bool disabled)
+			{
+				if (ColourRecipes == null || !ColourRecipes.Value || recipe == null || activeCraftingBase == null) return;   // the game lists recipes whose ingredients are only in the bank as disabled/missing too: colour those as well
+				try
+				{
+					if (listButtons == null) listButtons = typeof(RecipeListUI).GetField("recipeButtons", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+					var list = listButtons != null ? listButtons.GetValue(__instance) as List<GameObject> : null;
+					if (list == null || list.Count == 0) return;
+					GameObject go = list[list.Count - 1];
+					if (go == null) return;
+					int still, before;
+					PlanStation(activeCraftingBase, recipe, 1, out still, out before, true);
+					Color col = still == 0 ? Green : Red;
+					RecipeTint tint = go.GetComponent<RecipeTint>();
+					if (tint == null) tint = go.AddComponent<RecipeTint>();
+					tint.Setup(col);
+					if (!loggedTint) { loggedTint = true; if (log != null) log.LogInfo("Recipe colouring is active (first recipe: " + recipe.Name + ", " + (still == 0 ? "green" : "red") + ")."); }
+				}
+				catch (Exception e) { if (!loggedTint) { loggedTint = true; if (log != null) log.LogWarning("Recipe colouring: " + e.Message); } }
+			}
+			private static bool loggedTint;
+
 			[HarmonyPatch(typeof(FurnitureInfoUI), "UpdateFurnitureInfo")]
 			[HarmonyPostfix]
 			private static void FurnitureInfo_Postfix(BuildingSystem.FurnitureInfo furnitureInfo)
@@ -872,5 +904,34 @@ namespace BankInventoryMod
 				catch (Exception e) { if (log != null) log.LogWarning("Tenement from bank: " + e.Message); }
 			}
 		}
+	}
+
+	/// <summary>Keeps a recipe list entry's text in the green/red colour, every frame, so a UI mod that restyles text cannot undo it.</summary>
+	internal sealed class RecipeTint : MonoBehaviour
+	{
+		private Color color;
+		private Component text;
+		private System.Reflection.PropertyInfo prop;
+
+		internal void Setup(Color c)
+		{
+			color = c;
+			foreach (Component t in GetComponentsInChildren<Component>(true))
+			{
+				if (t == null || t.GetType().Name != "TextMeshProUGUI") continue;
+				text = t; prop = t.GetType().GetProperty("color");
+				break;
+			}
+			Apply();
+		}
+
+		private void Apply()
+		{
+			if (text == null || prop == null) return;
+			try { prop.SetValue(text, color, null); } catch (Exception) { }
+		}
+
+		private void OnEnable() { Apply(); }
+		private void LateUpdate() { Apply(); }
 	}
 }
