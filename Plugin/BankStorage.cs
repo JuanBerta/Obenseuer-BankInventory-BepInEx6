@@ -138,10 +138,29 @@ namespace BankInventoryMod
 			return ok;
 		}
 
+		/// <summary>Destroy the slot UIs of the controllers that are about to be replaced. Each rebuild (a save
+		/// load) used to leave a full set of slot objects parked in the bank's holder for the rest of the session.</summary>
+		private void ReleaseOldSlotUis()
+		{
+			if (Slots == null)
+				return;
+
+			// The panel may be showing these slots: close it first, the plugin binds the new ones on the next open.
+			if (BankInventoryPlugin.Instance != null)
+				BankInventoryPlugin.Instance.CloseBankForReload();
+
+			foreach (SlotController old in Slots)
+			{
+				if (old != null && old.slot != null)
+					old.RelaseSlot(destroy: true);
+			}
+		}
+
 		/// <summary>Rebuild SlotController instances from the current storageSlots array.
 		/// Used after loading a save and during initial setup.</summary>
 		public void RebuildSlots()
 		{
+			ReleaseOldSlotUis();
 			Slots = new SlotController[storageSlots.Length];
 			for (int i = 0; i < Slots.Length; i++)
 			{

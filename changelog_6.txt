@@ -1,6 +1,15 @@
 Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.7.9
+--------------------
+- Less memory churn: the search box's highlight/dim of other storages (backpack, crates, fridges) looked up every slot and rebuilt its match list on every repaint. It now does that 4 times a second, reuses its buffers and no longer allocates a delegate per item. Fewer garbage collections, fewer small stutters while a storage is open.
+
+v1.7.8
+--------------------
+- Fill on a liquid station: the container that sells for the most goes in, not just the largest. A wine or glass bottle multiplies the liquid's price, so it is picked over a plain jug; equal value falls back to the larger one.
+- Fixed: each save load left a full set of bank slot objects behind, which slowed the game over a long session.
+
 v1.7.7
 --------------------
 - Fixed: slowdown that grew the longer the game was played, mainly while a liquid station was open. The fill check is cached for a short time and the temporary diagnostic logging is removed.

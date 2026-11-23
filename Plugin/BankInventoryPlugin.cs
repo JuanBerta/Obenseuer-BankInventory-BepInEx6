@@ -10,7 +10,7 @@ using OS.Items;
 
 namespace BankInventoryMod
 {
-	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.7.7")]
+	[BepInPlugin("com.juanberta.obenseuer.bankinventory", "Obenseuer Bank Inventory", "1.7.9")]
 	public class BankInventoryPlugin : BaseUnityPlugin
 	{
 		private BankStorage bank;
@@ -216,6 +216,13 @@ namespace BankInventoryMod
 			UpdateTitle();
 			EnsureQuickStackButton();
 			return true;
+		}
+
+		/// <summary>A save is loading and the bank's slots are about to be rebuilt: close the panel first so it
+		/// never shows slot UIs that are being destroyed. The next open binds the new slots.</summary>
+		internal void CloseBankForReload()
+		{
+			CloseBank();
 		}
 
 		private void CloseBank()

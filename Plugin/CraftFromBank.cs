@@ -199,16 +199,41 @@ namespace BankInventoryMod
 			foreach (ItemStack st in station.InputSlots)
 				if (IsUsableFillContainer(st, liquid)) return;   // the station already has one
 			missingBefore = 1;
-			// Largest container first, so the biggest one that fits goes in.
-			SlotController best = null; float bestSize = -1f;
+			// The container that gives the most valuable result goes in: a wine or glass bottle multiplies the
+			// liquid's price (liquidValueFactor), so it beats a plain jug of the same size. Equal value: the larger one.
+			float available = 0f;
+			foreach (KeyValuePair<Item, float> o in recipe.Output)
+				if (o.Key != null && o.Key.ID == liquid.ID) { available = o.Value; break; }
+			SlotController best = null; float bestScore = -1f, bestSize = -1f;
 			foreach (SlotController sc in (includeInventory ? InventoryAndBank() : BankSlots()))
 			{
 				if (!IsUsableFillContainer(sc.itemStack, liquid)) continue;
 				float size = ItemLiquidData.GetContainerSizeFromItem(sc.itemStack.Meta, liquid);
-				if (size > bestSize) { best = sc; bestSize = size; }
+				float score = FillValue(sc.itemStack, liquid, size, available);
+				if (score > bestScore + 0.001f || (score >= bestScore - 0.001f && size > bestSize))
+				{
+					best = sc; bestScore = score; bestSize = size;
+				}
 			}
 			if (best != null) moves.Add(new Move { From = best, Amount = 1 });
 			else stillMissing = 1;
+		}
+
+		// What the filled container would sell for: its own value plus the liquid it takes times the liquid's
+		// value and the container's price factor (the same formula the game's item price uses).
+		private static float FillValue(ItemStack st, Item liquid, float size, float available)
+		{
+			float amount = available > 0.0001f ? Mathf.Min(size, available) : size;
+			float factor = 1f;
+			ItemLiquidData ld = st.GetMetaOfType<ItemLiquidData>();
+			if (ld == null)
+			{
+				ItemEmptyLiquidContainerData empty = st.GetMetaOfType<ItemEmptyLiquidContainerData>();
+				if (empty != null && empty.filledItem != null && empty.filledItem.Item != null)
+					ld = empty.filledItem.Item.GetMetaOfType<ItemLiquidData>();
+			}
+			if (ld != null && ld.liquidValueFactor > 0f) factor = ld.liquidValueFactor;
+			return st.itemReference.Item.Value + amount * liquid.Value * factor;
 		}
 
 		private static bool IsUsableFillContainer(ItemStack st, Item liquid)
@@ -521,10 +546,10 @@ namespace BankInventoryMod
 		private bool amountNoteBad;
 		private GUIStyle field, note;
 
-		private static Texture2D Tex(Color fill, Color edge)
+		private static Texture2D Tex(Color fill, Color edge, int rule = 1)
 		{
 			var t = new Texture2D(8, 8) { hideFlags = HideFlags.HideAndDontSave };
-			for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) t.SetPixel(x, y, x == 0 || y == 0 || x == 7 || y == 7 ? edge : fill);
+			for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) t.SetPixel(x, y, x < rule || y < rule || x >= 8 - rule || y >= 8 - rule ? edge : fill);
 			t.Apply();
 			return t;
 		}
@@ -598,22 +623,25 @@ namespace BankInventoryMod
 			box.normal.textColor = box.hover.textColor = box.active.textColor = new Color(0.98f, 0.93f, 0.8f);
 			if (paper)
 			{
-				// cardboard buttons with cream text; greyed hints and the amount on manila paper with ink
-				style.normal.background = Tex(new Color32(92, 70, 44, 245), new Color32(66, 50, 32, 255));
-				style.hover.background = Tex(new Color32(120, 92, 58, 245), new Color32(201, 160, 72, 255));
-				style.active.background = Tex(new Color32(201, 160, 72, 245), new Color32(122, 92, 40, 255));
-				style.normal.textColor = style.hover.textColor = new Color32(240, 228, 205, 255);
-				hint.normal.background = hint.hover.background = hint.active.background = Tex(new Color32(214, 196, 152, 235), new Color32(150, 132, 96, 255));
-				hint.normal.textColor = hint.hover.textColor = hint.active.textColor = new Color32(110, 96, 72, 255);
-				box.normal.background = box.hover.background = box.active.background = Tex(new Color32(232, 220, 188, 245), new Color32(150, 132, 96, 255));
-				box.normal.textColor = box.hover.textColor = box.active.textColor = new Color32(43, 36, 24, 255);
-				box.hover.background = Tex(new Color32(240, 230, 200, 245), new Color32(201, 160, 72, 255));
+				// Diegetic UI's drawing-sheet grey: paper buttons ruled in ink, amber when pressed, ink text
+				Color32 paperGrey = new Color32(176, 174, 165, 255), paperLight = new Color32(198, 196, 188, 255), slip = new Color32(206, 204, 196, 255);
+				Color32 rule = new Color32(69, 68, 63, 255), amber = new Color32(140, 94, 20, 255), ink = new Color32(22, 22, 20, 255), cream = new Color32(248, 247, 242, 255);
+				style.normal.background = Tex(paperGrey, rule, 2);
+				style.hover.background = Tex(paperLight, amber, 2);
+				style.active.background = Tex(amber, rule, 2);
+				style.normal.textColor = style.hover.textColor = ink;
+				style.active.textColor = cream;
+				hint.normal.background = hint.hover.background = hint.active.background = Tex(new Color32(160, 158, 150, 255), new Color32(98, 97, 92, 255), 2);
+				hint.normal.textColor = hint.hover.textColor = hint.active.textColor = new Color32(70, 69, 65, 255);
+				box.normal.background = box.active.background = Tex(slip, rule, 2);
+				box.hover.background = Tex(new Color32(218, 216, 209, 255), amber, 2);
+				box.normal.textColor = box.hover.textColor = box.active.textColor = ink;
 			}
 			field = new GUIStyle(box);
 			field.focused.background = field.normal.background = box.hover.background;
 			field.focused.textColor = field.normal.textColor = box.normal.textColor;
 			note = new GUIStyle(GUI.skin.label) { fontSize = 14, fontStyle = FontStyle.Bold, alignment = TextAnchor.MiddleLeft, padding = new RectOffset(10, 10, 5, 5), wordWrap = false, clipping = TextClipping.Overflow, border = new RectOffset(2, 2, 2, 2) };
-			note.normal.background = Tex(paper ? (Color)new Color32(232, 220, 188, 245) : new Color(0.1f, 0.09f, 0.08f, 0.92f), paper ? (Color)new Color32(150, 132, 96, 255) : new Color(0.35f, 0.32f, 0.27f));
+			note.normal.background = paper ? Tex(new Color32(206, 204, 196, 255), new Color32(69, 68, 63, 255), 2) : Tex(new Color(0.1f, 0.09f, 0.08f, 0.92f), new Color(0.35f, 0.32f, 0.27f));
 		}
 
 		private bool Btn(ref float x, float y, string text, bool usable, GUIStyle forced = null)
@@ -666,7 +694,7 @@ namespace BankInventoryMod
 			{
 				Vector2 ns = note.CalcSize(new GUIContent(amountNote));
 				Color old = note.normal.textColor;
-				note.normal.textColor = amountNoteBad ? new Color(0.85f, 0.25f, 0.2f) : (BankSearch.PaperLook ? (Color)new Color32(43, 36, 24, 255) : new Color(0.98f, 0.93f, 0.8f));
+				note.normal.textColor = amountNoteBad ? new Color(0.85f, 0.25f, 0.2f) : (BankSearch.PaperLook ? (Color)new Color32(22, 22, 20, 255) : new Color(0.98f, 0.93f, 0.8f));
 				GUI.Label(new Rect(Mathf.Max(8f, amountRect.x - 50f), amountRect.yMax + 6f, ns.x + 4f, Mathf.Max(ns.y, 28f)), amountNote, note);
 				note.normal.textColor = old;
 			}

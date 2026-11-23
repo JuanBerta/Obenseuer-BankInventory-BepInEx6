@@ -37,6 +37,11 @@ namespace BankInventoryMod
 		private int found;
 		private float nextRefresh;
 		private Texture2D dimTex, markTex;
+		private Slot[] dimSlots;
+		private bool[] dimMatch;
+		private float nextDimScan;
+		private string dimFilter;
+		private object dimStorage;
 
 		internal static void Init(GameObject host, Harmony harmony)
 		{
@@ -55,7 +60,7 @@ namespace BankInventoryMod
 				if (Has(item.Title)) return true;
 				ItemLiquidData liquid = st.GetMetaOfType<ItemLiquidData>();
 				if (liquid != null && liquid.liquidItem != null && liquid.liquidItem.Item != null && Has(liquid.liquidItem.Item.Title)) return true;
-				if (item.Categories != null && item.Categories.Any(Has)) return true;
+				if (item.Categories != null) foreach (string c in item.Categories) if (Has(c)) return true;
 			}
 			catch (Exception) { }
 			return false;
@@ -119,9 +124,11 @@ namespace BankInventoryMod
 
 		private static Rect PanelRect() { return ScreenRect(Inventory.instance.storagePanelUI.transform as RectTransform); }
 
+		private static readonly Vector3[] CornerBuffer = new Vector3[4];   // reused: this runs for every slot on every repaint
+
 		private static Rect ScreenRect(RectTransform rt)
 		{
-			var corners = new Vector3[4];
+			var corners = CornerBuffer;
 			rt.GetWorldCorners(corners);
 			Canvas canvas = rt.GetComponentInParent<Canvas>();
 			Camera cam = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay ? canvas.worldCamera : null;
@@ -155,12 +162,12 @@ namespace BankInventoryMod
 			clear.normal.textColor = clear.hover.textColor = new Color(0.79f, 0.6f, 0.23f);
 			if (paper)
 			{
-				// a receipt-white slip with ink text
-				field.normal.background = field.hover.background = Tex(new Color32(241, 238, 230, 245), new Color32(84, 72, 52, 255));
-				field.focused.background = Tex(new Color32(250, 248, 242, 250), new Color32(122, 43, 28, 255));
-				field.normal.textColor = field.hover.textColor = field.focused.textColor = new Color32(43, 36, 24, 255);
-				placeholder.normal.textColor = new Color32(120, 108, 86, 255);
-				clear.normal.textColor = clear.hover.textColor = new Color32(122, 43, 28, 255);
+				// drawing-sheet grey slip ruled in ink, like Diegetic UI
+				field.normal.background = field.hover.background = Tex(new Color32(206, 204, 196, 255), new Color32(69, 68, 63, 255));
+				field.focused.background = Tex(new Color32(218, 216, 209, 255), new Color32(140, 94, 20, 255));
+				field.normal.textColor = field.hover.textColor = field.focused.textColor = new Color32(22, 22, 20, 255);
+				placeholder.normal.textColor = new Color32(84, 83, 78, 255);
+				clear.normal.textColor = clear.hover.textColor = new Color32(129, 28, 28, 255);
 			}
 		}
 
@@ -169,23 +176,37 @@ namespace BankInventoryMod
 		{
 			if (dimTex == null) { dimTex = Tex(new Color(0f, 0f, 0f, 0.72f), new Color(0f, 0f, 0f, 0.72f)); }
 			bool paper = PaperLook;
-			Color mark = paper ? new Color32(122, 43, 28, 255) : new Color32(242, 191, 89, 255);
+			Color mark = paper ? new Color32(129, 28, 28, 255) : new Color32(242, 191, 89, 255);
 			if (markTex == null) { markTex = new Texture2D(1, 1) { hideFlags = HideFlags.HideAndDontSave }; markTex.SetPixel(0, 0, Color.white); markTex.Apply(); }
-			found = 0;
-			Slot[] slots;
-			try { slots = Inventory.instance.storagePanelUI.storageSlotPanel.GetComponentsInChildren<Slot>(false); } catch (Exception) { return; }
-			Color keep = GUI.color;
-			foreach (Slot slot in slots)
+			// Which slots exist and which match changes slowly: look 4 times a second, draw on every repaint.
+			if (dimSlots == null || Time.unscaledTime >= nextDimScan || dimFilter != Filter || !ReferenceEquals(dimStorage, lastStorage))
 			{
+				nextDimScan = Time.unscaledTime + 0.25f;
+				dimFilter = Filter; dimStorage = lastStorage;
+				try { dimSlots = Inventory.instance.storagePanelUI.storageSlotPanel.GetComponentsInChildren<Slot>(false); } catch (Exception) { dimSlots = null; return; }
+				if (dimMatch == null || dimMatch.Length != dimSlots.Length) dimMatch = new bool[dimSlots.Length];
+				for (int i = 0; i < dimSlots.Length; i++)
+				{
+					Slot slot = dimSlots[i];
+					dimMatch[i] = false;
+					if (slot == null) continue;
+					// the slot's controller holds the real stack (the item widget's own copy can be empty)
+					ItemStack st = null;
+					try { st = slot.slotcontrol != null ? slot.slotcontrol.itemStack : null; } catch (Exception) { }
+					if (st == null || st.itemId < 0)
+						try { ItemData data = slot.GetItemItemData(); if (data != null) st = data.stack; } catch (Exception) { }
+					dimMatch[i] = Matches(st);
+				}
+			}
+			found = 0;
+			Color keep = GUI.color;
+			for (int i = 0; i < dimSlots.Length; i++)
+			{
+				Slot slot = dimSlots[i];
 				if (slot == null) continue;
 				Rect r;
 				try { r = ScreenRect(slot.transform as RectTransform); } catch (Exception) { continue; }
-				// the slot's controller holds the real stack (the item widget's own copy can be empty)
-				ItemStack st = null;
-				try { st = slot.slotcontrol != null ? slot.slotcontrol.itemStack : null; } catch (Exception) { }
-				if (st == null || st.itemId < 0)
-					try { ItemData data = slot.GetItemItemData(); if (data != null) st = data.stack; } catch (Exception) { }
-				if (Matches(st))
+				if (dimMatch[i])
 				{
 					found++;
 					GUI.color = mark;
