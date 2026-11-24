@@ -1,6 +1,10 @@
 ﻿Obenseuer BankInventory - Changelog (BepInEx 6 flavour)
 =======================================================
 
+v1.8.1
+--------------------
+- Fixed: the crafting station screen was laggy since 1.8.0. The recipe colouring and the bank bar (Max, Take ingredients) scanned the whole bank every few frames. They now recalculate only when the recipe, the amount, or the stock in the station, your inventory or the bank changes.
+
 v1.8.0
 --------------------
 - New: in a crafting station's recipe list, recipe names are green when your inventory plus the bank has everything for one craft and red when something is missing (setting ColourRecipes).

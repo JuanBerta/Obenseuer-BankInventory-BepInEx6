@@ -99,6 +99,33 @@ namespace BankInventoryMod
 			get { return ShownFurniture != null ? ShownFurniture.taskItem as TaskItemBlueprint : null; }
 		}
 
+		// A cheap fingerprint of everything a craft plan depends on (the station's slots, your inventory, the bank).
+		// Plans are only recomputed when it changes, so an open station does not rescan the bank every few frames.
+		internal static int StockSignature(CraftingBase st)
+		{
+			unchecked
+			{
+				int h = 17;
+				try
+				{
+					if (st != null)
+					{
+						h = h * 31 + st.GetHashCode();
+						SlotController[] io = st.InputOutputStorage != null ? st.InputOutputStorage.Slots : null;
+						if (io != null) foreach (SlotController sc in io) if (sc != null && sc.itemStack != null) h = h * 31 + sc.itemStack.itemId * 7 + sc.itemStack.itemAmount;
+					}
+					if (Inventory.instance != null && Inventory.instance.Slots != null)
+						foreach (SlotController sc in Inventory.instance.Slots) if (sc != null && sc.itemStack != null) h = h * 31 + sc.itemStack.itemId * 11 + sc.itemStack.itemAmount;
+					BankStorage bank = BankStorage.Instance;
+					if (bank != null && bank.Slots != null)
+						foreach (SlotController sc in bank.Slots) if (sc != null && sc.itemStack != null) h = h * 31 + sc.itemStack.itemId * 13 + sc.itemStack.itemAmount;
+					h = h * 31 + (UseStolen != null && UseStolen.Value ? 1 : 0);
+				}
+				catch (Exception) { }
+				return h;
+			}
+		}
+
 		// ---- Bank stacks that may be used ----
 
 		internal static IEnumerable<SlotController> BankSlots()
@@ -534,17 +561,42 @@ namespace BankInventoryMod
 					if (list == null || list.Count == 0) return;
 					GameObject go = list[list.Count - 1];
 					if (go == null) return;
-					int still, before;
-					PlanStation(activeCraftingBase, recipe, 1, out still, out before, true);
-					Color col = still == 0 ? Green : Red;
+					Color col = TintFor(activeCraftingBase, recipe) ? Green : Red;
 					RecipeTint tint = go.GetComponent<RecipeTint>();
 					if (tint == null) tint = go.AddComponent<RecipeTint>();
 					tint.Setup(col);
-					if (!loggedTint) { loggedTint = true; if (log != null) log.LogInfo("Recipe colouring is active (first recipe: " + recipe.Name + ", " + (still == 0 ? "green" : "red") + ")."); }
+					if (!loggedTint) { loggedTint = true; if (log != null) log.LogInfo("Recipe colouring is active (first recipe: " + recipe.Name + ", " + (col == Green ? "green" : "red") + ")."); }
 				}
 				catch (Exception e) { if (!loggedTint) { loggedTint = true; if (log != null) log.LogWarning("Recipe colouring: " + e.Message); } }
 			}
 			private static bool loggedTint;
+
+			// The list is rebuilt often and every recipe would scan inventory and bank again. The answer only changes when
+			// the stock does, so it is cached per recipe until the stock fingerprint (checked 4 times a second) changes.
+			private static int tintSig;
+			private static float tintSigAt = -10f;
+			private static CraftingBase tintStation;
+			private static readonly Dictionary<Recipe, bool> tintCache = new Dictionary<Recipe, bool>();
+
+			private static bool TintFor(CraftingBase station, Recipe recipe)
+			{
+				float now = Time.unscaledTime;
+				if (now - tintSigAt > 0.25f || !ReferenceEquals(station, tintStation))
+				{
+					tintSigAt = now;
+					int sig = StockSignature(station);
+					if (sig != tintSig || !ReferenceEquals(station, tintStation)) { tintSig = sig; tintStation = station; tintCache.Clear(); }
+				}
+				bool ok;
+				if (!tintCache.TryGetValue(recipe, out ok))
+				{
+					int still, before;
+					PlanStation(station, recipe, 1, out still, out before, true);
+					ok = still == 0;
+					tintCache[recipe] = ok;
+				}
+				return ok;
+			}
 
 			[HarmonyPatch(typeof(FurnitureInfoUI), "UpdateFurnitureInfo")]
 			[HarmonyPostfix]
@@ -591,8 +643,29 @@ namespace BankInventoryMod
 			try { CraftFromBank.TickAuto(); } catch (Exception) { }
 			if (Time.unscaledTime < nextCheck) return;
 			nextCheck = Time.unscaledTime + 0.3f;
+			// The plans (and the "Max" binary search) scan the whole bank: only redo them when the recipe, the amount or
+			// the stock changed, and every few seconds anyway.
+			int sig = 0;
+			try
+			{
+				unchecked
+				{
+					sig = CraftFromBank.StockSignature(CraftFromBank.Station);
+					Recipe r = CraftFromBank.ShownRecipe;
+					sig = sig * 31 + (r != null ? r.GetHashCode() : 0);
+					sig = sig * 31 + (CraftFromBank.ShownBlueprint != null ? CraftFromBank.ShownBlueprint.GetHashCode() : 0);
+					sig = sig * 31 + CraftFromBank.Amount;
+					sig = sig * 31 + (CraftFromBank.WorkbenchOpen ? 1 : 0);
+				}
+			}
+			catch (Exception) { }
+			if (sig == lastSig && Time.unscaledTime < nextForced) return;
+			lastSig = sig; nextForced = Time.unscaledTime + 3f;
 			Recalc();
 		}
+
+		private int lastSig;
+		private float nextForced;
 
 		private void Recalc()
 		{

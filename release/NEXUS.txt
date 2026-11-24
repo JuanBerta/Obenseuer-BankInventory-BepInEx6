@@ -2,9 +2,11 @@
 A bank you can open anywhere with infinite, multi-page, searchable storage. Take crafting ingredients for as many crafts as you want straight from the bank and send leftovers back, and pay tenement upgrades with bank materials.
 
 === FILE DESCRIPTIONS ===
-Obenseuer-BankInventory-BepInEx6-v1.8.0.rar : Bank Inventory 1.8.0 for BepInEx 6. Extract into the Obenseuer folder (replaces the old DLL).
+Obenseuer-BankInventory-BepInEx6-v1.8.1.rar : Bank Inventory 1.8.1 for BepInEx 6. Extract into the Obenseuer folder (replaces the old DLL).
 
 === CHANGELOG (Nexus "Changelogs" tab) ===
+1.8.1
+- Fixed: the crafting station screen was laggy since 1.8.0. The recipe colouring and the bank bar (Max, Take ingredients) scanned the whole bank every few frames. They now recalculate only when the recipe, the amount, or the stock in the station, your inventory or the bank changes.
 1.8.0
 - New: in a crafting station's recipe list, recipe names are green when your inventory plus the bank has everything for one craft and red when something is missing (setting ColourRecipes).
 1.7.9
