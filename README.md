@@ -31,6 +31,7 @@ A BepInEx 6 mod for [Obenseuer](https://store.steampowered.com/app/1554640/Obens
 - **Search any storage**: the backpack and every container get the same box; matching slots are outlined and the rest dimmed.
 - **Multiple pages**: the UI shows 88 slots per page; navigate with `Shift + [` / `Shift + ]` (previous / next page).
 - **Take ingredients from the bank**: at a crafting station, a button moves only the missing ingredients for the shown recipe from the bank into the station (the game's own matching: item groups, liquids, amounts). At a furniture workbench it moves the missing materials into your inventory. Choose the amount with - / + / Max (Max = what the station and bank can cover). A second button sends the station's items (or the blueprint's materials you carry) back to the bank. Optional auto-fill when you pick a recipe. Works alongside Craft From Storage.
+- **Ctrl + click on Fill**: at a barrel or fermenter, holding Ctrl while you click Fill fills as many containers as it can in one go (from the station, your inventory and the bank). A plain click fills one. Setting `CtrlClickFillsAll`.
 - **Tenement upgrades from the bank**: upgrades and renovations count the materials in the bank and take from it only what the tenement storages and your inventory are missing (`[Tenement] UseBankForUpgrades`).
 - **Save support**: the bank is a global savable object (`Storage.global = true`), serialized into `Globals.tnmt` by the game's save system. It survives scene changes and save/load cycles.
 - Everything is configurable in the BepInEx config file.

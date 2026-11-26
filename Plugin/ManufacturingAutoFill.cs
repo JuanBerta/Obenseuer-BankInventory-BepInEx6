@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using BepInEx.Configuration;
 using HarmonyLib;
 using UnityEngine;
 
@@ -19,6 +20,51 @@ internal static class ManufacturingAutoFill
 		// your inventory and the bank can supply them; OpenLid then moves them in before filling.
 		harmony.Patch(AccessTools.Method(typeof(manufacturingProcess), "FillRecipeAvailable"),
 			postfix: new HarmonyMethod(typeof(ManufacturingAutoFill), nameof(FillAvailablePostfix)));
+		// Ctrl + click on Fill: keep filling until the liquid, the containers (inventory and bank) or the station run out.
+		harmony.Patch(AccessTools.Method(typeof(manufacturingProcess), "OpenLid"),
+			postfix: new HarmonyMethod(typeof(ManufacturingAutoFill), nameof(OpenLidPostfix)));
+	}
+
+	internal static ConfigEntry<bool> CtrlFillAll;
+	private static bool repeating;
+	private static bool CtrlHeld() { return Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl); }
+	private static float LiquidLeft(manufacturingProcess p)
+	{
+		float sum = 0f;
+		foreach (KeyValuePair<int, float> kv in p.liquidRemaining) sum += kv.Value;
+		return sum;
+	}
+
+	private static void OpenLidPostfix(manufacturingProcess __instance)
+	{
+		if (repeating || CtrlFillAll == null || !CtrlFillAll.Value || !CtrlHeld()) return;
+		repeating = true;
+		try
+		{
+			if (__instance == null) return;
+			int filled = 1;
+			float last = LiquidLeft(__instance);
+			for (int i = 0; i < 400; i++)
+			{
+				if (__instance.liquidRemaining.Count == 0) break;
+				if (__instance.stage != manufacturingProcess.Stage.Ready && __instance.stage != manufacturingProcess.Stage.Failed) break;
+				cachedUntil = 0f;   // the answer cached by FillAvailablePostfix is out of date after each fill
+				if (!__instance.FillRecipeAvailable()) break;
+				__instance.OpenLid();
+				float now = LiquidLeft(__instance);
+				if (now >= last - 0.0001f) break;   // nothing was filled: stop instead of looping
+				last = now; filled++;
+			}
+			var bepLog = CraftFromBank.DiagLog;
+			if (bepLog != null) bepLog.LogInfo("Ctrl+Fill: " + filled + " container(s) filled");
+			if (filled > 1) CraftFromBank.Notify("Filled " + filled + " containers");
+		}
+		catch (Exception e)
+		{
+			var bepLog = CraftFromBank.DiagLog;
+			if (bepLog != null) bepLog.LogWarning("Ctrl+Fill failed: " + e.Message);
+		}
+		finally { repeating = false; }
 	}
 
 	// The game asks FillRecipeAvailable every frame while the station is open. Planning the bank is not free,

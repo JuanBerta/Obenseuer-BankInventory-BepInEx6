@@ -29,6 +29,8 @@ namespace BankInventoryMod
 			log = logger;
 			Enabled = cfg.Bind("Crafting", "TakeIngredientsButton", true,
 				"While a crafting station or furniture workbench is open, show a button that moves the missing ingredients from the bank into the station (or your inventory, for furniture).");
+			ManufacturingAutoFill.CtrlFillAll = cfg.Bind("Crafting", "CtrlClickFillsAll", true,
+				"Ctrl + click on Fill at a barrel or fermenter keeps filling containers from the station, your inventory and the bank until the liquid or the containers run out.");
 			AutoFill = cfg.Bind("Crafting", "AutoFillOnRecipe", false,
 				"Move the missing ingredients automatically whenever you pick a recipe (or change the amount) at a crafting station.");
 			UseStolen = cfg.Bind("Crafting", "UseStolenItems", false,
@@ -229,20 +231,23 @@ namespace BankInventoryMod
 			foreach (ItemStack st in station.InputSlots)
 				if (IsUsableFillContainer(st, liquid)) return;   // the station already has one
 			missingBefore = 1;
-			// The container that gives the most valuable result goes in: a wine or glass bottle multiplies the
-			// liquid's price (liquidValueFactor), so it beats a plain jug of the same size. Equal value: the larger one.
+			// The container with the highest value multiplier (liquidValueFactor: wine and glass bottles multiply the
+			// liquid's price) goes in first. Same multiplier: the one that gives the most valuable result, then the larger.
 			float available = 0f;
 			foreach (KeyValuePair<Item, float> o in recipe.Output)
 				if (o.Key != null && o.Key.ID == liquid.ID) { available = o.Value; break; }
-			SlotController best = null; float bestScore = -1f, bestSize = -1f;
+			SlotController best = null; float bestScore = -1f, bestSize = -1f, bestFactor = -1f;
 			foreach (SlotController sc in (includeInventory ? InventoryAndBank() : BankSlots()))
 			{
 				if (!IsUsableFillContainer(sc.itemStack, liquid)) continue;
 				float size = ItemLiquidData.GetContainerSizeFromItem(sc.itemStack.Meta, liquid);
 				float score = FillValue(sc.itemStack, liquid, size, available);
-				if (score > bestScore + 0.001f || (score >= bestScore - 0.001f && size > bestSize))
+				float factor = FactorOf(sc.itemStack);
+				bool better = best == null || factor > bestFactor + 0.001f
+					|| (factor >= bestFactor - 0.001f && (score > bestScore + 0.001f || (score >= bestScore - 0.001f && size > bestSize)));
+				if (better)
 				{
-					best = sc; bestScore = score; bestSize = size;
+					best = sc; bestScore = score; bestSize = size; bestFactor = factor;
 				}
 			}
 			if (best != null) moves.Add(new Move { From = best, Amount = 1 });
@@ -254,7 +259,12 @@ namespace BankInventoryMod
 		private static float FillValue(ItemStack st, Item liquid, float size, float available)
 		{
 			float amount = available > 0.0001f ? Mathf.Min(size, available) : size;
-			float factor = 1f;
+			return st.itemReference.Item.Value + amount * liquid.Value * FactorOf(st);
+		}
+
+		// The container's price multiplier for the liquid it holds (1 for a plain container).
+		private static float FactorOf(ItemStack st)
+		{
 			ItemLiquidData ld = st.GetMetaOfType<ItemLiquidData>();
 			if (ld == null)
 			{
@@ -262,8 +272,7 @@ namespace BankInventoryMod
 				if (empty != null && empty.filledItem != null && empty.filledItem.Item != null)
 					ld = empty.filledItem.Item.GetMetaOfType<ItemLiquidData>();
 			}
-			if (ld != null && ld.liquidValueFactor > 0f) factor = ld.liquidValueFactor;
-			return st.itemReference.Item.Value + amount * liquid.Value * factor;
+			return ld != null && ld.liquidValueFactor > 0f ? ld.liquidValueFactor : 1f;
 		}
 
 		private static bool IsUsableFillContainer(ItemStack st, Item liquid)
