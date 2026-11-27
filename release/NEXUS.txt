@@ -4,7 +4,8 @@ A bank you can open anywhere with infinite, multi-page, searchable storage. Take
 === FILE DESCRIPTIONS ===
 Obenseuer-BankInventory-BepInEx6-v1.9.1.rar : Bank Inventory 1.9.1 for BepInEx 6. Extract into the Obenseuer folder (replaces the old DLL).
 
-$11.9.1
+=== CHANGELOG (Nexus "Changelogs" tab) ===
+1.9.1
 - Fixed: the game froze for up to a second whenever you moved an item in or out of a crafting station or pressed craft. The recipe list colours were recalculated for every recipe at once each time the list was rebuilt. They now keep their last colour and refresh a few recipes per frame, so the list may take a moment to turn green or red after a change, but the game no longer stops.
 1.9.0
 - New: Ctrl + left click on Fill at a barrel or fermenter fills every container it can in one go, taking containers from the station, your inventory and the bank until the liquid or the containers run out (setting CtrlClickFillsAll). A plain click still fills one.
