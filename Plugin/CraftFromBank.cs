@@ -570,11 +570,19 @@ namespace BankInventoryMod
 					if (list == null || list.Count == 0) return;
 					GameObject go = list[list.Count - 1];
 					if (go == null) return;
-					Color col = TintFor(activeCraftingBase, recipe) ? Green : Red;
-					RecipeTint tint = go.GetComponent<RecipeTint>();
-					if (tint == null) tint = go.AddComponent<RecipeTint>();
-					tint.Setup(col);
-					if (!loggedTint) { loggedTint = true; if (log != null) log.LogInfo("Recipe colouring is active (first recipe: " + recipe.Name + ", " + (col == Green ? "green" : "red") + ")."); }
+					// Never compute here: the game rebuilds this list on every item move and craft click, and planning
+					// every recipe at once froze the game for most of a second. Show the last known colour now and
+					// refresh it a few recipes per frame (PumpTints).
+					TintCheck(activeCraftingBase);
+					bool known, ok;
+					known = tintCache.TryGetValue(recipe, out ok);
+					if (known) Paint(go, recipe, ok);
+					int doneEpoch;
+					if (!known || !tintEpochOf.TryGetValue(recipe, out doneEpoch) || doneEpoch != tintEpoch)
+					{
+						tintPendingGo[recipe] = go;
+						if (tintQueued.Add(recipe)) tintQueue.Enqueue(recipe);
+					}
 				}
 				catch (Exception e) { if (!loggedTint) { loggedTint = true; if (log != null) log.LogWarning("Recipe colouring: " + e.Message); } }
 			}
@@ -583,28 +591,80 @@ namespace BankInventoryMod
 			// The list is rebuilt often and every recipe would scan inventory and bank again. The answer only changes when
 			// the stock does, so it is cached per recipe until the stock fingerprint (checked 4 times a second) changes.
 			private static int tintSig;
+			private static int tintEpoch;
 			private static float tintSigAt = -10f;
 			private static CraftingBase tintStation;
-			private static readonly Dictionary<Recipe, bool> tintCache = new Dictionary<Recipe, bool>();
+			private static readonly Dictionary<Recipe, bool> tintCache = new Dictionary<Recipe, bool>();       // last known answer
+			private static readonly Dictionary<Recipe, int> tintEpochOf = new Dictionary<Recipe, int>();      // stock epoch it was computed in
+			private static readonly Dictionary<Recipe, GameObject> tintPendingGo = new Dictionary<Recipe, GameObject>();
+			private static readonly HashSet<Recipe> tintQueued = new HashSet<Recipe>();
+			private static readonly Queue<Recipe> tintQueue = new Queue<Recipe>();
 
-			private static bool TintFor(CraftingBase station, Recipe recipe)
+			// Notices a change of station or stock (fingerprint checked 4 times a second). Old answers stay on screen
+			// until they are recomputed; they are only marked stale by the new epoch.
+			private static void TintCheck(CraftingBase station)
 			{
 				float now = Time.unscaledTime;
-				if (now - tintSigAt > 0.25f || !ReferenceEquals(station, tintStation))
+				if (now - tintSigAt <= 0.25f && ReferenceEquals(station, tintStation)) return;
+				tintSigAt = now;
+				if (!ReferenceEquals(station, tintStation))
 				{
-					tintSigAt = now;
-					int sig = StockSignature(station);
-					if (sig != tintSig || !ReferenceEquals(station, tintStation)) { tintSig = sig; tintStation = station; tintCache.Clear(); }
+					tintStation = station; tintCache.Clear(); tintEpochOf.Clear(); tintPendingGo.Clear(); tintQueued.Clear(); tintQueue.Clear();
+					tintSig = StockSignature(station); tintEpoch++;
+					return;
 				}
-				bool ok;
-				if (!tintCache.TryGetValue(recipe, out ok))
+				int sig = StockSignature(station);
+				if (sig != tintSig) { tintSig = sig; tintEpoch++; }
+			}
+
+			private static void Paint(GameObject go, Recipe recipe, bool ok)
+			{
+				if (go == null) return;
+				Color col = ok ? Green : Red;
+				RecipeTint tint = go.GetComponent<RecipeTint>();
+				if (tint == null) tint = go.AddComponent<RecipeTint>();
+				tint.Setup(col);
+				if (!loggedTint) { loggedTint = true; if (log != null) log.LogInfo("Recipe colouring is active (first recipe: " + recipe.Name + ", " + (ok ? "green" : "red") + ")."); }
+			}
+
+			private static float slowTintLogAt;
+
+			/// <summary>Recomputes stale recipe colours, a few milliseconds of work per frame at most.</summary>
+			internal static void PumpTints()
+			{
+				if (tintQueue.Count == 0) return;
+				CraftingBase st = CraftingBase.currentCraftingBase;
+				if (st == null || !ReferenceEquals(st, tintStation))
 				{
-					int still, before;
-					PlanStation(station, recipe, 1, out still, out before, true);
-					ok = still == 0;
-					tintCache[recipe] = ok;
+					tintQueue.Clear(); tintQueued.Clear(); tintPendingGo.Clear();
+					return;
 				}
-				return ok;
+				TintCheck(st);
+				var sw = System.Diagnostics.Stopwatch.StartNew();
+				int done = 0;
+				try
+				{
+					while (tintQueue.Count > 0 && sw.ElapsedMilliseconds < 3)
+					{
+						Recipe r = tintQueue.Dequeue();
+						tintQueued.Remove(r);
+						GameObject go; tintPendingGo.TryGetValue(r, out go); tintPendingGo.Remove(r);
+						int e; bool ok;
+						if (tintEpochOf.TryGetValue(r, out e) && e == tintEpoch && tintCache.TryGetValue(r, out ok)) { Paint(go, r, ok); continue; }
+						int still, before;
+						PlanStation(st, r, 1, out still, out before, true);
+						ok = still == 0;
+						tintCache[r] = ok; tintEpochOf[r] = tintEpoch;
+						Paint(go, r, ok);
+						done++;
+					}
+				}
+				catch (Exception ex) { if (log != null && Time.unscaledTime > slowTintLogAt) { slowTintLogAt = Time.unscaledTime + 30f; log.LogWarning("Recipe colouring: " + ex.Message); } }
+				if (sw.ElapsedMilliseconds >= 20 && log != null && Time.unscaledTime > slowTintLogAt)
+				{
+					slowTintLogAt = Time.unscaledTime + 30f;
+					log.LogWarning("Recipe colouring: one frame took " + sw.ElapsedMilliseconds + " ms for " + done + " recipe(s).");
+				}
 			}
 
 			[HarmonyPatch(typeof(FurnitureInfoUI), "UpdateFurnitureInfo")]
@@ -650,6 +710,7 @@ namespace BankInventoryMod
 		private void Update()
 		{
 			try { CraftFromBank.TickAuto(); } catch (Exception) { }
+			try { CraftFromBank.Hooks.PumpTints(); } catch (Exception) { }
 			if (Time.unscaledTime < nextCheck) return;
 			nextCheck = Time.unscaledTime + 0.3f;
 			// The plans (and the "Max" binary search) scan the whole bank: only redo them when the recipe, the amount or
