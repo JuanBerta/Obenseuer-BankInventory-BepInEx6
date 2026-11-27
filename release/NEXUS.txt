@@ -1,10 +1,14 @@
-﻿=== SHORT DESCRIPTION (summary) ===
+=== SHORT DESCRIPTION (summary) ===
 A bank you can open anywhere with infinite, multi-page, searchable storage. Take crafting ingredients for as many crafts as you want straight from the bank and send leftovers back, and pay tenement upgrades with bank materials.
 
 === FILE DESCRIPTIONS ===
-Obenseuer-BankInventory-BepInEx6-v1.8.1.rar : Bank Inventory 1.8.1 for BepInEx 6. Extract into the Obenseuer folder (replaces the old DLL).
+Obenseuer-BankInventory-BepInEx6-v1.9.1.rar : Bank Inventory 1.9.1 for BepInEx 6. Extract into the Obenseuer folder (replaces the old DLL).
 
-=== CHANGELOG (Nexus "Changelogs" tab) ===
+$11.9.1
+- Fixed: the game froze for up to a second whenever you moved an item in or out of a crafting station or pressed craft. The recipe list colours were recalculated for every recipe at once each time the list was rebuilt. They now keep their last colour and refresh a few recipes per frame, so the list may take a moment to turn green or red after a change, but the game no longer stops.
+1.9.0
+- New: Ctrl + left click on Fill at a barrel or fermenter fills every container it can in one go, taking containers from the station, your inventory and the bank until the liquid or the containers run out (setting CtrlClickFillsAll). A plain click still fills one.
+- Changed (1.8.2): when Fill picks a container for you, the one with the highest value multiplier goes first (wine and glass bottles multiply the liquid's price), then the one that gives the most valuable result, then the larger.
 1.8.1
 - Fixed: the crafting station screen was laggy since 1.8.0. The recipe colouring and the bank bar (Max, Take ingredients) scanned the whole bank every few frames. They now recalculate only when the recipe, the amount, or the stock in the station, your inventory or the bank changes.
 1.8.0
